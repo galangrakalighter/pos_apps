@@ -1,0 +1,3 @@
+BEGIN;
+ALTER TABLE warehouse ADD COLUMN image_url TEXT;
+COMMIT;

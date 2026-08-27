@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "POS Mitra",
+    "slug": "pos-mitra",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "android",
+      "ios"
+    ],
+    "android": {
+      "package": "com.posapps.mitra"
+    },
+    "androidNavigationBar": {
+      "visible": "sticky-immersive",
+      "barStyle": "light-content"
+    },
+    "ios": {
+      "bundleIdentifier": "com.posapps.mitra"
+    },
+    "plugins": [
+      "expo-sqlite",
+      "expo-secure-store",
+      [
+        "expo-navigation-bar",
+        {
+          "visibility": "hidden",
+          "behavior": "overlay-swipe",
+          "position": "relative",
+          "legacyVisible": "sticky-immersive"
+        }
+      ]
+    ]
+  }
+}
