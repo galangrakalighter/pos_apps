@@ -1,7 +1,5 @@
 import { API_URL } from '../config';
 import { Session } from '../types';
-import { fetch as expoFetch } from 'expo/fetch';
-import { File } from 'expo-file-system';
 
 export interface PartnerStockSummary {
   id: string; username: string; partnerName: string; region: string | null;
@@ -90,18 +88,17 @@ export const deleteWarehouseProduct = (session: Session, id: string) =>
 export async function uploadWarehouseProductImage(session: Session, id: string, asset: { uri: string; mimeType?: string | null; fileName?: string | null }) {
   if (!asset?.uri) throw new Error('File gambar tidak valid; silakan pilih gambar kembali');
   const form = new FormData();
-  const file = new File(asset.uri);
   const mimeExtension: Record<string, string> = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
   const uriExtension = asset.uri.match(/\.([a-zA-Z0-9]+)(?:\?|$)/)?.[1]?.toLowerCase();
   const extension = mimeExtension[asset.mimeType ?? ''] ?? (uriExtension && ['jpg', 'jpeg', 'png', 'webp'].includes(uriExtension) ? uriExtension : 'jpg');
   const uploadName = asset.fileName?.trim() || `produk-${id}.${extension}`;
-  form.append('image', file, uploadName);
-  const response = await expoFetch(`${API_URL}/admin/warehouse/${id}/image`, { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` }, body: form });
+  const mimeType = asset.mimeType || (extension === 'png' ? 'image/png' : extension === 'webp' ? 'image/webp' : 'image/jpeg');
+  form.append('image', { uri: asset.uri, name: uploadName, type: mimeType } as unknown as Blob);
+  const response = await fetch(`${API_URL}/admin/warehouse/${id}/image`, { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` }, body: form });
   const payload = await response.json().catch(() => null) as WarehouseProduct | { message?: string | string[] } | null;
   if (!response.ok) {
     const detail = payload && 'message' in payload ? payload.message : undefined;
     throw new Error(Array.isArray(detail) ? detail[0] : detail || `Upload gambar gagal (${response.status})`);
   }
-  if (!payload || !('id' in payload)) throw new Error('Respons upload gambar dari server tidak valid');
-  return payload as WarehouseProduct;
+  return payload && 'id' in payload ? payload as WarehouseProduct : null;
 }

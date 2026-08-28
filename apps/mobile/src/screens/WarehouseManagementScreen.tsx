@@ -25,37 +25,34 @@ export function WarehouseManagementScreen({ session }: { session: Session }) {
     if (name.trim().length < 2 || type.trim().length < 2 || (tab === 'bahan_baku' && !price.trim())) return Alert.alert('Data belum lengkap', tab === 'bahan_baku' ? 'Isi nama, tipe, dan harga jual ke Mitra.' : 'Isi nama dan kategori produk jadi.');
     setSaving(true);
     try {
+      const savedName = name.trim();
       const input = { name: name.trim(), type: type.trim(), stock: tab === 'bahan_baku' ? Number(stock) || 0 : 0, price: tab === 'bahan_baku' ? String(Number(price)) : '0', kind: tab, unit: tab === 'bahan_baku' ? unit : 'pcs', recipes: tab === 'produk_jadi' ? recipes.map(({ ingredientId, quantity, unit: recipeItemUnit }) => ({ ingredientId, quantity, unit: recipeItemUnit || 'pcs' })) : [] };
-      let product = editingId ? await updateWarehouseProduct(session, editingId, input) : await createWarehouseProduct(session, input);
-      setProducts((current) => editingId ? current.map((item) => item.id === product.id ? product : item) : [...current, product].sort((a, b) => a.name.localeCompare(b.name)));
+      const saved = editingId ? await updateWarehouseProduct(session, editingId, input) : await createWarehouseProduct(session, input);
+      const productId = editingId || saved?.id;
+      if (!productId) throw new Error('ID produk tidak diterima dari server');
       if (image) {
         try {
-          await uploadWarehouseProductImage(session, product.id, image);
-          const refreshed = await getAdminWarehouseCatalog(session);
-          setProducts(refreshed);
-          product = refreshed.find((item) => item.id === product.id) ?? product;
+          await uploadWarehouseProductImage(session, productId, image);
         } catch (uploadError) {
-          // Request upload dapat selesai di server walaupun respons terputus atau
-          // gagal diproses di perangkat. Verifikasi ulang sebelum menyatakan gagal.
           try {
             const refreshed = await getAdminWarehouseCatalog(session);
             setProducts(refreshed);
-            const saved = refreshed.find((item) => item.id === product.id);
-            if (saved?.imageUrl) {
-              product = saved;
-            } else {
+            const refreshedProduct = refreshed.find((item) => item.id === productId);
+            if (!refreshedProduct?.imageUrl) {
               reset();
-              Alert.alert('Produk tersimpan, gambar belum berhasil', `${product.name} sudah ditambahkan. Upload gambar gagal: ${message(uploadError)}`);
+              Alert.alert('Produk tersimpan, gambar belum berhasil', `${savedName} sudah diperbarui. Upload gambar gagal: ${message(uploadError)}`);
               return;
             }
           } catch {
             reset();
-            Alert.alert('Produk tersimpan, gambar belum berhasil', `${product.name} sudah ditambahkan. Silakan buka ulang halaman untuk memeriksa gambar.`);
+            Alert.alert('Produk tersimpan, gambar belum berhasil', `${savedName} sudah diperbarui. Silakan muat ulang halaman untuk memeriksa gambar.`);
             return;
           }
         }
       }
-      reset(); Alert.alert('Produk tersimpan', `${product.name} berhasil disimpan.`);
+      const refreshed = await getAdminWarehouseCatalog(session);
+      setProducts(refreshed);
+      reset(); Alert.alert('Produk tersimpan', `${savedName} berhasil disimpan.`);
     } catch (error) { Alert.alert('Gagal menyimpan produk', message(error)); } finally { setSaving(false); }
   };
   const remove = async (item: WarehouseProduct) => { try { await deleteWarehouseProduct(session, item.id); setProducts((current) => current.filter((product) => product.id !== item.id)); if (editingId === item.id) reset(); } catch (error) { Alert.alert('Produk tidak dapat dihapus', message(error)); } };
