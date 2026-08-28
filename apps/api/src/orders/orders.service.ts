@@ -26,39 +26,49 @@ export class OrdersService {
     }
     if (dto.items.length === 0) throw new BadRequestException('Order must contain items');
 
-    // Aggregate repeated lines before persisting the order snapshot.
-    const quantities = new Map<string, number>();
+    const requestedItems = new Map<string, { quantity: number; unit: string }>();
     for (const item of dto.items) {
-      quantities.set(item.warehouseId, (quantities.get(item.warehouseId) ?? 0) + item.quantity);
+      if (requestedItems.has(item.warehouseId)) throw new BadRequestException('Bahan baku tidak boleh duplikat dalam satu pesanan');
+      requestedItems.set(item.warehouseId, { quantity: item.quantity, unit: item.unit });
     }
-    const ids = [...quantities.keys()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+    const ids = [...requestedItems.keys()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
 
     const saved = await this.dataSource.transaction(async (manager) => {
-      const products: Array<{ id: string; nama_bumbu: string; stock: number; harga: string }> =
+      const products: Array<{ id: string; nama_bumbu: string; stock: number; harga: string; satuan: string }> =
         await manager.query(
-          `SELECT id::text, nama_bumbu, stock, harga::text
+          `SELECT id::text, nama_bumbu, stock::float8 AS stock, harga::text, satuan
              FROM warehouse
-            WHERE id = ANY($1::bigint[])
+            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku'
             ORDER BY id`,
           [ids],
         );
       if (products.length !== ids.length) throw new BadRequestException('Warehouse item not found');
 
-      const totalCents = products.reduce((sum, product) => sum + this.toCents(product.harga) * BigInt(quantities.get(product.id)!), 0n);
+      const normalized = new Map(products.map((product) => {
+        const requested = requestedItems.get(product.id)!;
+        const quantity = this.convertUnit(requested.quantity, requested.unit, product.satuan);
+        if (quantity === null) throw new BadRequestException(`Satuan ${requested.unit} tidak sesuai untuk ${product.nama_bumbu} (${product.satuan})`);
+        if (quantity > product.stock) {
+          throw new ConflictException(`Jumlah ${product.nama_bumbu} melebihi stok Gudang Pusat. Stok tersedia ${product.stock} ${product.satuan}`);
+        }
+        return [product.id, quantity];
+      }));
+      const totalAmount = products.reduce((sum, product) => sum + Number(product.harga) * normalized.get(product.id)!, 0).toFixed(2);
       const inserted: Array<{ id: string }> = await manager.query(
         `INSERT INTO orders (pemesan_id, pemberi_id, status, total_amount)
          VALUES ($1::uuid, $2::uuid, $3::order_status, $4::numeric)
          RETURNING id::text`,
-        [requesterId, supplierId, OrderStatus.PENDING, this.fromCents(totalCents)],
+        [requesterId, supplierId, OrderStatus.PENDING, totalAmount],
       );
       const orderId = inserted[0].id;
 
       for (const product of products) {
-        const requested = quantities.get(product.id)!;
+        const requested = requestedItems.get(product.id)!;
+        const lineTotal = (Number(product.harga) * normalized.get(product.id)!).toFixed(2);
         await manager.query(
-          `INSERT INTO order_items (order_id, warehouse_id, nama_barang, jumlah_pesan, unit_price, line_total)
-           VALUES ($1::bigint, $2::bigint, $3, $4, $5::numeric, $6::numeric)`,
-          [orderId, product.id, product.nama_bumbu, requested, product.harga, this.fromCents(this.toCents(product.harga) * BigInt(requested))],
+          `INSERT INTO order_items (order_id, warehouse_id, nama_barang, jumlah_pesan, satuan, unit_price, line_total)
+           VALUES ($1::bigint, $2::bigint, $3, $4, $5, $6::numeric, $7::numeric)`,
+          [orderId, product.id, product.nama_bumbu, requested.quantity, requested.unit, product.harga, lineTotal],
         );
       }
 
@@ -133,32 +143,36 @@ export class OrdersService {
       // The warehouse decrement, partner increment, status update, and idempotency
       // marker share one transaction and therefore cannot partially succeed.
       if (dto.status === OrderStatus.SELESAI) {
-        const items: Array<{ warehouse_id: string; nama_barang: string; jumlah_pesan: number }> =
+        const items: Array<{ warehouse_id: string; nama_barang: string; jumlah_pesan: number; satuan: string; satuan_gudang: string }> =
           await manager.query(
-            `SELECT warehouse_id::text, nama_barang, jumlah_pesan
-               FROM order_items
-              WHERE order_id = $1::bigint
-              ORDER BY warehouse_id
+            `SELECT oi.warehouse_id::text, oi.nama_barang, oi.jumlah_pesan::float8 AS jumlah_pesan,
+                    oi.satuan, w.satuan AS satuan_gudang
+               FROM order_items oi
+               JOIN warehouse w ON w.id = oi.warehouse_id
+              WHERE oi.order_id = $1::bigint
+              ORDER BY oi.warehouse_id
               FOR UPDATE`,
             [orderId],
-          );
+        );
         for (const item of items) {
+          const normalizedQuantity = this.convertUnit(item.jumlah_pesan, item.satuan, item.satuan_gudang);
+          if (normalizedQuantity === null) throw new ConflictException(`Satuan ${item.nama_barang} tidak kompatibel dengan Gudang Pusat`);
           const rawUpdated: unknown = await manager.query(
             `UPDATE warehouse
                 SET stock = stock - $1, updated_at = now()
               WHERE id = $2::bigint AND stock >= $1
               RETURNING id::text`,
-            [item.jumlah_pesan, item.warehouse_id],
+            [normalizedQuantity, item.warehouse_id],
           );
           if (this.resultRows<{ id: string }>(rawUpdated).length !== 1) {
             throw new ConflictException(`Stok ${item.nama_barang} tidak mencukupi`);
           }
           await manager.query(
-            `INSERT INTO produk_mitra (mitra_id, nama_produk, stock, harga)
-             VALUES ($1::uuid, $2, $3, 0)
-             ON CONFLICT (mitra_id, nama_produk)
-             DO UPDATE SET stock = produk_mitra.stock + EXCLUDED.stock, updated_at = now()`,
-            [requesterId, item.nama_barang, item.jumlah_pesan],
+            `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
+             VALUES ($1::uuid, $4::bigint, $2, 'bahan_baku', 'Bahan baku', $3, 0)
+             ON CONFLICT (mitra_id, jenis_produk, nama_produk)
+             DO UPDATE SET stock = produk_mitra.stock + EXCLUDED.stock, master_produk_id = EXCLUDED.master_produk_id, updated_at = now()`,
+            [requesterId, item.nama_barang, normalizedQuantity, item.warehouse_id],
           );
         }
       }
@@ -189,13 +203,13 @@ export class OrdersService {
     if (!rows[0]?.isPusat) throw new ForbiddenException('Central admin access required');
   }
 
-  private toCents(value: string): bigint {
-    const [whole, fraction = ''] = value.split('.');
-    return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
-  }
-
-  private fromCents(value: bigint): string {
-    return `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+  private convertUnit(quantity: number, from: string, to: string): number | null {
+    if (from === to) return quantity;
+    if (from === 'kilogram' && to === 'gram') return quantity * 1000;
+    if (from === 'gram' && to === 'kilogram') return quantity / 1000;
+    if (from === 'liter' && to === 'mililiter') return quantity * 1000;
+    if (from === 'mililiter' && to === 'liter') return quantity / 1000;
+    return null;
   }
 
   /** Normalize raw UPDATE ... RETURNING results across TypeORM/pg versions. */

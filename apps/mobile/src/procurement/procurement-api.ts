@@ -2,10 +2,10 @@ import NetInfo from '@react-native-community/netinfo';
 import { API_URL } from '../config';
 import { Session } from '../types';
 
-export interface ProcurementLine { warehouseId: number; quantity: number; }
+export interface ProcurementLine { warehouseId: number; quantity: number; unit: string; }
 export type OrderStatus = 'pending' | 'diterima' | 'dikirim' | 'selesai';
 export interface RemoteOrderItem {
-  id: string; warehouseId: string; namaBarang: string; jumlahPesan: number; unitPrice: string; lineTotal: string;
+  id: string; warehouseId: string; namaBarang: string; jumlahPesan: number; satuan: string; unitPrice: string; lineTotal: string;
 }
 export interface RemoteOrder {
   id: string; pemesanId: string; pemberiId: string; status: OrderStatus;
@@ -38,6 +38,6 @@ export async function createProcurementOrder(session: Session, items: Procuremen
   }
   return orderRequest<RemoteOrder>(session, '', {
     method: 'POST',
-    body: JSON.stringify({ supplierId: session.centralSupplierId ?? undefined, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity })) }),
+    body: JSON.stringify({ supplierId: session.centralSupplierId ?? undefined, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity, unit: item.unit })) }),
   });
 }

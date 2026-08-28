@@ -4,6 +4,7 @@
   "main": "expo/AppEntry",
   "scripts": {
     "start": "expo start",
+    "start:safe": "node --max-old-space-size=4096 ./node_modules/expo/bin/cli start --clear --max-workers 1",
     "android": "expo start --android",
     "ios": "expo start --ios"
   },

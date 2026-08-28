@@ -25,14 +25,20 @@ export class AccountsService {
     try {
       return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
         const ids = [...seen].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
-        const warehouse: Array<{ id: string; itemName: string; stock: number; centralPrice: string }> = await manager.query(
-          `SELECT id::text, nama_bumbu AS "itemName", stock, harga::text AS "centralPrice" FROM warehouse
-            WHERE id = ANY($1::bigint[]) ORDER BY id FOR UPDATE`, [ids],
+        const warehouse: Array<{ id: string; itemName: string; stock: number; centralPrice: string; unit: string }> = await manager.query(
+          `SELECT id::text, nama_bumbu AS "itemName", stock::float8 AS stock, harga::text AS "centralPrice", satuan AS unit FROM warehouse
+            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' ORDER BY id FOR UPDATE`, [ids],
         );
         if (warehouse.length !== ids.length) throw new BadRequestException('Barang gudang tidak ditemukan');
         const byId = new Map(inputs.map((item) => [item.warehouseId, item]));
+        const normalized = new Map(warehouse.map((item) => {
+          const input = byId.get(item.id)!;
+          const quantity = this.convertUnit(input.quantity, input.unit, item.unit);
+          if (quantity === null) throw new BadRequestException(`Satuan ${input.unit} tidak sesuai untuk ${item.itemName} (${item.unit})`);
+          return [item.id, quantity];
+        }));
         for (const item of warehouse) {
-          if (item.stock < byId.get(item.id)!.quantity) throw new ConflictException(`Stok ${item.itemName} tidak cukup`);
+          if (item.stock < normalized.get(item.id)!) throw new ConflictException(`Stok ${item.itemName} tidak cukup`);
         }
 
         const users: UserProfileRow[] = await manager.query(
@@ -43,38 +49,39 @@ export class AccountsService {
         );
         const partner = users[0];
         if (inputs.length === 0) return { partner, distributionId: null, centralRevenue: '0.00' };
-        const totalCents = warehouse.reduce((sum, item) => sum + this.toCents(item.centralPrice) * BigInt(byId.get(item.id)!.quantity), 0n);
+        const totalAmount = warehouse.reduce((sum, item) => sum + Number(item.centralPrice) * normalized.get(item.id)!, 0).toFixed(2);
         const distributions: Array<{ id: string }> = await manager.query(
           `INSERT INTO partner_stock_distributions (pusat_id, mitra_id, total_amount)
            VALUES ($1::uuid, $2::uuid, $3::numeric) RETURNING id::text`,
-          [admin.id, partner.id, this.fromCents(totalCents)],
+          [admin.id, partner.id, totalAmount],
         );
         for (const warehouseItem of warehouse) {
           const input = byId.get(warehouseItem.id)!;
+          const normalizedQuantity = normalized.get(warehouseItem.id)!;
           // Baris gudang sudah dikunci oleh SELECT ... FOR UPDATE dan stoknya telah
           // divalidasi di atas. Karena itu update ini aman dari concurrent order.
           // Jangan mengandalkan panjang hasil UPDATE ... RETURNING: bentuk hasil raw
           // query TypeORM berbeda antar versi/driver dan pernah memicu false conflict.
           await manager.query(
             `UPDATE warehouse SET stock = stock - $1, updated_at = now()
-              WHERE id = $2::bigint`, [input.quantity, warehouseItem.id],
+              WHERE id = $2::bigint`, [normalizedQuantity, warehouseItem.id],
           );
           const products: Array<{ id: string }> = await manager.query(
-            `INSERT INTO produk_mitra (mitra_id, nama_produk, stock, harga)
-             VALUES ($1::uuid, $2, $3, $4::numeric) RETURNING id::text`,
-            [partner.id, warehouseItem.itemName, input.quantity, '0.00'],
+            `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
+             VALUES ($1::uuid, $5::bigint, $2, 'bahan_baku', 'Bahan baku', $3, $4::numeric) RETURNING id::text`,
+            [partner.id, warehouseItem.itemName, normalizedQuantity, '0.00', warehouseItem.id],
           );
-          const lineTotal = this.toCents(warehouseItem.centralPrice) * BigInt(input.quantity);
+          const lineTotal = (Number(warehouseItem.centralPrice) * normalizedQuantity).toFixed(2);
           await manager.query(
             `INSERT INTO partner_stock_distribution_items
               (distribution_id, warehouse_id, partner_product_id, item_name, quantity,
                central_unit_price, partner_retail_price, line_total)
              VALUES ($1::bigint, $2::bigint, $3::bigint, $4, $5, $6::numeric, $7::numeric, $8::numeric)`,
             [distributions[0].id, warehouseItem.id, products[0].id, warehouseItem.itemName,
-              input.quantity, warehouseItem.centralPrice, '0.00', this.fromCents(lineTotal)],
+              normalizedQuantity, warehouseItem.centralPrice, '0.00', lineTotal],
           );
         }
-        return { partner, distributionId: distributions[0].id, centralRevenue: this.fromCents(totalCents) };
+        return { partner, distributionId: distributions[0].id, centralRevenue: totalAmount };
       });
     } catch (error) {
       if (this.isUniqueViolation(error)) throw new ConflictException('Username sudah digunakan');
@@ -192,13 +199,12 @@ export class AccountsService {
     return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505';
   }
 
-  private toCents(value: string): bigint {
-    if (!/^\d+(\.\d{1,2})?$/.test(value)) throw new BadRequestException('Format harga tidak valid');
-    const [whole, fraction = ''] = value.split('.');
-    return BigInt(whole) * 100n + BigInt(fraction.padEnd(2, '0'));
-  }
-
-  private fromCents(value: bigint): string {
-    return `${value / 100n}.${String(value % 100n).padStart(2, '0')}`;
+  private convertUnit(quantity: number, from: string, to: string): number | null {
+    if (from === to) return quantity;
+    if (from === 'kilogram' && to === 'gram') return quantity * 1000;
+    if (from === 'gram' && to === 'kilogram') return quantity / 1000;
+    if (from === 'liter' && to === 'mililiter') return quantity * 1000;
+    if (from === 'mililiter' && to === 'liter') return quantity / 1000;
+    return null;
   }
 }

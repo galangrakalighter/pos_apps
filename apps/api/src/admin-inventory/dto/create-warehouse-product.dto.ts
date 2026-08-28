@@ -1,4 +1,11 @@
-import { IsInt, IsNumberString, IsOptional, IsString, MaxLength, Min, MinLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsNumber, IsNumberString, IsOptional, IsString, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+
+export class RecipeItemDto {
+  @IsNumberString() ingredientId!: string;
+  @IsNumber() @Min(0.001) quantity!: number;
+  @IsIn(['gram', 'kilogram', 'mililiter', 'liter', 'pcs', 'pack', 'botol', 'kaleng']) unit!: string;
+}
 
 export class CreateWarehouseProductDto {
   @IsString() @MinLength(2) @MaxLength(150)
@@ -12,4 +19,13 @@ export class CreateWarehouseProductDto {
 
   @IsNumberString()
   price!: string;
+
+  @IsOptional() @IsIn(['bahan_baku', 'produk_jadi'])
+  kind: 'bahan_baku' | 'produk_jadi' = 'bahan_baku';
+
+  @IsOptional() @IsIn(['gram', 'kilogram', 'mililiter', 'liter', 'pcs', 'pack', 'botol', 'kaleng'])
+  unit = 'pcs';
+
+  @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => RecipeItemDto)
+  recipes: RecipeItemDto[] = [];
 }

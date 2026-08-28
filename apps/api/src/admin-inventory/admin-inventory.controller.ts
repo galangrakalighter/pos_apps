@@ -7,6 +7,9 @@ import { AdminInventoryService } from './admin-inventory.service';
 import { CreateWarehouseProductDto } from './dto/create-warehouse-product.dto';
 import { UpdateWarehouseProductDto } from './dto/update-warehouse-product.dto';
 import { UpdatePartnerProductPriceDto } from './dto/update-partner-product-price.dto';
+import { CreateFinishedProductDto } from './dto/create-finished-product.dto';
+import { UpdateFinishedProductDto } from './dto/update-finished-product.dto';
+import { UpdateOwnFinishedProductDto } from './dto/update-own-finished-product.dto';
 
 @Controller('admin/partners')
 @UseGuards(JwtAuthGuard)
@@ -19,6 +22,21 @@ export class AdminInventoryController {
   @Get(':mitraId/stock')
   stock(@CurrentUser() admin: AuthenticatedUser, @Param('mitraId', ParseUUIDPipe) mitraId: string) {
     return this.service.partnerStock(admin, mitraId);
+  }
+
+  @Post(':mitraId/finished-products')
+  createFinished(@CurrentUser() admin: AuthenticatedUser, @Param('mitraId', ParseUUIDPipe) mitraId: string, @Body() dto: CreateFinishedProductDto) {
+    return this.service.createFinishedProduct(admin, mitraId, dto);
+  }
+
+  @Patch(':mitraId/finished-products/:productId')
+  updateFinished(@CurrentUser() admin: AuthenticatedUser, @Param('mitraId', ParseUUIDPipe) mitraId: string, @Param('productId', ParseIntPipe) productId: number, @Body() dto: UpdateFinishedProductDto) {
+    return this.service.updateFinishedProduct(admin, mitraId, String(productId), dto);
+  }
+
+  @Delete(':mitraId/finished-products/:productId')
+  deleteFinished(@CurrentUser() admin: AuthenticatedUser, @Param('mitraId', ParseUUIDPipe) mitraId: string, @Param('productId', ParseIntPipe) productId: number) {
+    return this.service.deleteFinishedProduct(admin, mitraId, String(productId));
   }
 }
 
@@ -75,4 +93,5 @@ export class PartnerProductsController {
   constructor(private readonly service: AdminInventoryService) {}
   @Get('mine') mine(@CurrentUser() user: AuthenticatedUser) { return this.service.myProducts(user); }
   @Patch(':id/price') price(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePartnerProductPriceDto) { return this.service.updateMyProductPrice(user, String(id), dto.price); }
+  @Patch(':id/finished-stock') finishedStock(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateOwnFinishedProductDto) { return this.service.updateMyFinishedProduct(user, String(id), dto); }
 }

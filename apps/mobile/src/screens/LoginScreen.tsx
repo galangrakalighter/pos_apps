@@ -45,7 +45,7 @@ const styles = StyleSheet.create({
   logo: { width: 58, height: 58, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   logoText: { color: colors.primary, fontSize: 28, fontWeight: '900' },
   brandName: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 12 },
-  tagline: { color: '#CFE7E1', fontSize: 13, marginTop: 4 },
+  tagline: { color: '#FFF0E5', fontSize: 13, marginTop: 4 },
   card: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, padding: 24, borderRadius: 22, ...shadow },
   title: { color: colors.ink, fontSize: 24, fontWeight: '900' },
   subtitle: { color: colors.muted, marginTop: 5, marginBottom: 20 },

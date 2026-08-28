@@ -71,4 +71,19 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_local_history_owner_pending ON local_history(owner_id, sync_status, created_at)`);
     await db.execAsync('PRAGMA user_version = 5');
   }
+  if ((version?.user_version ?? 0) < 6) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_products)');
+    if (!columns.some((column) => column.name === 'product_kind')) {
+      await db.execAsync(`ALTER TABLE local_products ADD COLUMN product_kind TEXT NOT NULL DEFAULT 'bahan_baku'`);
+    }
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_local_products_owner_kind ON local_products(owner_id, product_kind, is_active, name)`);
+    await db.execAsync('PRAGMA user_version = 6');
+  }
+  if ((version?.user_version ?? 0) < 7) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_products)');
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('unit')) await db.execAsync(`ALTER TABLE local_products ADD COLUMN unit TEXT`);
+    if (!names.has('recipe_complete')) await db.execAsync(`ALTER TABLE local_products ADD COLUMN recipe_complete INTEGER NOT NULL DEFAULT 1`);
+    await db.execAsync('PRAGMA user_version = 7');
+  }
 }

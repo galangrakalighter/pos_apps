@@ -9,6 +9,9 @@ export interface Product {
   price: number;
   color: string;
   imageUrl?: string | null;
+  kind: 'bahan_baku' | 'produk_jadi';
+  unit?: string | null;
+  recipeComplete?: boolean;
 }
 
 export interface CartItem extends Product {

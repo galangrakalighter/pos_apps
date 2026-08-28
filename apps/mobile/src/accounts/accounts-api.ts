@@ -34,7 +34,7 @@ export async function updateOwnProfile(
 }
 
 export interface InitialStockInput {
-  warehouseId: number; quantity: number;
+  warehouseId: number; quantity: number; unit: string;
 }
 
 export function onboardPartnerWithStock(session: Session, username: string, password: string, items: InitialStockInput[]) {

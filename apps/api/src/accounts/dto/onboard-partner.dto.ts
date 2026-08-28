@@ -1,9 +1,10 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsInt, IsNumberString, IsOptional, IsString, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsNumber, IsNumberString, IsOptional, IsString, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
 export class InitialStockItemDto {
   @IsNumberString() warehouseId!: string;
-  @IsInt() @Min(1) quantity!: number;
+  @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001) quantity!: number;
+  @IsIn(['gram', 'kilogram', 'mililiter', 'liter', 'pcs', 'pack', 'botol', 'kaleng']) unit!: string;
 }
 
 export class OnboardPartnerDto {
