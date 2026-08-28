@@ -21,6 +21,8 @@ import { WarehouseManagementScreen } from './src/screens/WarehouseManagementScre
 import { colors } from './src/theme';
 import { ScreenName, Session } from './src/types';
 import { useImmersiveNavigation } from './src/system/useImmersiveNavigation';
+import { syncPartnerProducts } from './src/products/products-sync';
+import NetInfo from '@react-native-community/netinfo';
 
 const titles: Record<ScreenName, string> = { pos: 'Kasir', history: 'Riwayat bisnis', inventory: 'Produk & stok', orders: 'Procurement', profile: 'Profil akun', adminSales: 'Monitoring penjualan', adminOrders: 'Fulfillment pesanan', adminAccounts: 'Manajemen akun mitra' };
 
@@ -49,6 +51,14 @@ export default function App() {
       { userId: session.id, accessToken: session.accessToken },
       () => { void countPendingSales(session.mitraId).then(setPendingSync); },
     );
+  }, [session]);
+  useEffect(() => {
+    if (!session || session.role === 'pusat') return;
+    const syncProducts = () => { void syncPartnerProducts(session).catch(() => undefined); };
+    syncProducts();
+    return NetInfo.addEventListener((state) => {
+      if (state.isConnected && state.isInternetReachable !== false) syncProducts();
+    });
   }, [session]);
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /></View>;
   const handleLogin = (nextSession: Session) => {

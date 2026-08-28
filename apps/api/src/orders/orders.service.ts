@@ -143,34 +143,39 @@ export class OrdersService {
       // The warehouse decrement, partner increment, status update, and idempotency
       // marker share one transaction and therefore cannot partially succeed.
       if (dto.status === OrderStatus.SELESAI) {
-        const items: Array<{ warehouse_id: string; nama_barang: string; jumlah_pesan: number; satuan: string; satuan_gudang: string }> =
+        const items: Array<{ warehouse_id: string; nama_barang: string; jumlah_pesan: number; satuan: string }> =
           await manager.query(
             `SELECT oi.warehouse_id::text, oi.nama_barang, oi.jumlah_pesan::float8 AS jumlah_pesan,
-                    oi.satuan, w.satuan AS satuan_gudang
+                    oi.satuan
                FROM order_items oi
-               JOIN warehouse w ON w.id = oi.warehouse_id
               WHERE oi.order_id = $1::bigint
               ORDER BY oi.warehouse_id
-              FOR UPDATE`,
+              FOR UPDATE OF oi`,
             [orderId],
-        );
+          );
         for (const item of items) {
-          const normalizedQuantity = this.convertUnit(item.jumlah_pesan, item.satuan, item.satuan_gudang);
+          const warehouseRows: Array<{ id: string; stock: number; unit: string }> = await manager.query(
+            `SELECT id::text, stock::float8 AS stock, satuan AS unit
+               FROM warehouse
+              WHERE id = $1::bigint
+              FOR UPDATE`,
+            [item.warehouse_id],
+          );
+          const warehouseItem = warehouseRows[0];
+          if (!warehouseItem) throw new NotFoundException(`Bahan baku ${item.nama_barang} tidak ditemukan di Gudang Pusat`);
+          const normalizedQuantity = this.convertUnit(item.jumlah_pesan, item.satuan, warehouseItem.unit);
           if (normalizedQuantity === null) throw new ConflictException(`Satuan ${item.nama_barang} tidak kompatibel dengan Gudang Pusat`);
-          const rawUpdated: unknown = await manager.query(
+          if (warehouseItem.stock < normalizedQuantity) throw new ConflictException(`Stok ${item.nama_barang} tidak mencukupi`);
+          await manager.query(
             `UPDATE warehouse
                 SET stock = stock - $1, updated_at = now()
-              WHERE id = $2::bigint AND stock >= $1
-              RETURNING id::text`,
+              WHERE id = $2::bigint`,
             [normalizedQuantity, item.warehouse_id],
           );
-          if (this.resultRows<{ id: string }>(rawUpdated).length !== 1) {
-            throw new ConflictException(`Stok ${item.nama_barang} tidak mencukupi`);
-          }
           await manager.query(
             `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
              VALUES ($1::uuid, $4::bigint, $2, 'bahan_baku', 'Bahan baku', $3, 0)
-             ON CONFLICT (mitra_id, jenis_produk, nama_produk)
+             ON CONFLICT ON CONSTRAINT uq_produk_mitra_owner_kind_name
              DO UPDATE SET stock = produk_mitra.stock + EXCLUDED.stock, master_produk_id = EXCLUDED.master_produk_id, updated_at = now()`,
             [requesterId, item.nama_barang, normalizedQuantity, item.warehouse_id],
           );
