@@ -4,6 +4,7 @@ import {
   IsArray,
   IsDateString,
   IsInt,
+  IsIn,
   IsNumberString,
   IsOptional,
   IsString,
@@ -20,6 +21,11 @@ export class HistoryItemDto {
   @IsNumberString() price!: string;
   @IsDateString() createdAt!: string;
   @IsOptional() @IsString() @MaxLength(1000) note?: string;
+  @IsOptional() @IsUUID() transactionUuid?: string;
+  @IsOptional() @IsIn(['tunai', 'qris', 'transfer', 'debit']) paymentMethod?: string;
+  @IsOptional() @IsNumberString() amountPaid?: string;
+  @IsOptional() @IsNumberString() changeAmount?: string;
+  @IsOptional() @IsNumberString() transactionTotal?: string;
 }
 
 export class SyncHistoryDto {

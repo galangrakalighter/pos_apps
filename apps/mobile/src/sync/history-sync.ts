@@ -39,6 +39,11 @@ async function performSync(session: SyncSession): Promise<void> {
           price: centsToDecimal(sale.price_cents),
           createdAt: sale.created_at,
           note: sale.note ?? undefined,
+          transactionUuid: sale.transaction_uuid,
+          paymentMethod: sale.payment_method,
+          amountPaid: centsToDecimal(sale.amount_paid_cents),
+          changeAmount: centsToDecimal(sale.change_cents),
+          transactionTotal: centsToDecimal(sale.transaction_total_cents),
         })),
       }),
     });

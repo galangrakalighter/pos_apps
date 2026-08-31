@@ -12,4 +12,9 @@ export class History {
   @Column({ type: 'text', nullable: true }) keterangan!: string | null;
   @Column({ name: 'synced_at', type: 'timestamptz' }) syncedAt!: Date;
   @Column({ name: 'stock_applied_at', type: 'timestamptz', nullable: true }) stockAppliedAt!: Date | null;
+  @Column({ name: 'transaction_uuid', type: 'uuid' }) transactionUuid!: string;
+  @Column({ name: 'payment_method', length: 20 }) paymentMethod!: string;
+  @Column({ name: 'amount_paid', type: 'numeric', precision: 18, scale: 2 }) amountPaid!: string;
+  @Column({ name: 'change_amount', type: 'numeric', precision: 18, scale: 2 }) changeAmount!: string;
+  @Column({ name: 'transaction_total', type: 'numeric', precision: 18, scale: 2 }) transactionTotal!: string;
 }

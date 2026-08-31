@@ -86,4 +86,19 @@ export async function initializeDatabase(): Promise<void> {
     if (!names.has('recipe_complete')) await db.execAsync(`ALTER TABLE local_products ADD COLUMN recipe_complete INTEGER NOT NULL DEFAULT 1`);
     await db.execAsync('PRAGMA user_version = 7');
   }
+  if ((version?.user_version ?? 0) < 8) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_history)');
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('transaction_uuid')) await db.execAsync(`ALTER TABLE local_history ADD COLUMN transaction_uuid TEXT`);
+    if (!names.has('payment_method')) await db.execAsync(`ALTER TABLE local_history ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'tunai'`);
+    if (!names.has('amount_paid_cents')) await db.execAsync(`ALTER TABLE local_history ADD COLUMN amount_paid_cents INTEGER NOT NULL DEFAULT 0`);
+    if (!names.has('change_cents')) await db.execAsync(`ALTER TABLE local_history ADD COLUMN change_cents INTEGER NOT NULL DEFAULT 0`);
+    if (!names.has('transaction_total_cents')) await db.execAsync(`ALTER TABLE local_history ADD COLUMN transaction_total_cents INTEGER NOT NULL DEFAULT 0`);
+    await db.runAsync(`UPDATE local_history
+      SET transaction_uuid = COALESCE(transaction_uuid, uuid),
+          transaction_total_cents = CASE WHEN transaction_total_cents = 0 THEN price_cents * sold_quantity ELSE transaction_total_cents END,
+          amount_paid_cents = CASE WHEN amount_paid_cents = 0 THEN price_cents * sold_quantity ELSE amount_paid_cents END`);
+    await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_local_history_transaction ON local_history(owner_id, transaction_uuid)`);
+    await db.execAsync('PRAGMA user_version = 8');
+  }
 }
