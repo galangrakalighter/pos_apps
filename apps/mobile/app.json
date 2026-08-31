@@ -3,13 +3,18 @@
     "name": "POS Mitra",
     "slug": "pos-mitra",
     "version": "1.0.0",
+    "icon": "./assets/pos-app-icon.png",
     "orientation": "portrait",
     "platforms": [
       "android",
       "ios"
     ],
     "android": {
-      "package": "com.posapps.mitra"
+      "package": "com.posapps.mitra",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/pos-adaptive-icon.png",
+        "backgroundColor": "#E3792F"
+      }
     },
     "androidNavigationBar": {
       "visible": "sticky-immersive",
