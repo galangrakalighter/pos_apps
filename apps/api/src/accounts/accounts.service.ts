@@ -91,7 +91,7 @@ export class AccountsService {
 
   async getOwnProfile(user: AuthenticatedUser) {
     const rows: UserProfileRow[] = await this.dataSource.query(
-      `SELECT id::text, username, nama_mitra AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"
+      `SELECT id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"
          FROM users WHERE id = $1::uuid`, [user.id],
     );
     return rows[0];
@@ -184,7 +184,7 @@ export class AccountsService {
         const updated: UserProfileRow[] = await manager.query(
           `UPDATE users SET username = $1, nama_mitra = $2, wilayah = $3, password = $4
             WHERE id = $5::uuid
-            RETURNING id::text, username, nama_mitra AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"`,
+            RETURNING id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"`,
           [dto.username ?? current.username, dto.partnerName ?? current.partnerName, dto.region ?? current.region, passwordHash, user.id],
         );
         return updated[0];

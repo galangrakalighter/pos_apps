@@ -12,7 +12,20 @@ export async function saveSession(session: Session): Promise<void> {
 export async function loadSession(): Promise<Session | null> {
   const raw = await SecureStore.getItemAsync(SESSION_KEY);
   if (!raw) return null;
-  try { return JSON.parse(raw) as Session; } catch { await clearSession(); return null; }
+  try {
+    const stored = JSON.parse(raw) as Partial<Session>;
+    if (!stored.id || !stored.accessToken || !stored.role) { await clearSession(); return null; }
+    const name = typeof stored.name === 'string' && stored.name.trim() ? stored.name : 'akun';
+    return {
+      id: stored.id,
+      mitraId: stored.mitraId || stored.id,
+      name,
+      partnerName: typeof stored.partnerName === 'string' && stored.partnerName.trim() ? stored.partnerName : name,
+      role: stored.role,
+      accessToken: stored.accessToken,
+      centralSupplierId: stored.centralSupplierId ?? null,
+    };
+  } catch { await clearSession(); return null; }
 }
 
 export async function clearSession(): Promise<void> {

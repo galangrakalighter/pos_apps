@@ -7,7 +7,9 @@ import { Session } from '../types';
 type Values = { username: string; partnerName: string; region: string };
 
 export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session: Session; onSessionUpdated: (session: Session) => void; onLogout: () => void }) {
-  const initial = { username: session.name, partnerName: session.partnerName, region: '' };
+  const safeUsername = session.name?.trim() || 'akun';
+  const safePartnerName = session.partnerName?.trim() || safeUsername;
+  const initial = { username: safeUsername, partnerName: safePartnerName, region: '' };
   const [values, setValues] = useState<Values>(initial);
   const [snapshot, setSnapshot] = useState<Values>(initial);
   const [currentPassword, setCurrentPassword] = useState('');
@@ -16,7 +18,7 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
   const [saving, setSaving] = useState(false);
   const change = (field: keyof Values, value: string) => setValues((current) => ({ ...current, [field]: value }));
 
-  useEffect(() => { void getOwnProfile(session).then((profile) => { const loaded = { username: profile.username, partnerName: profile.partnerName, region: profile.region ?? '' }; setValues(loaded); setSnapshot(loaded); }).catch((error) => Alert.alert('Profil tidak dapat dimuat', error.message)); }, [session.accessToken]);
+  useEffect(() => { void getOwnProfile(session).then((profile) => { const username = profile.username?.trim() || safeUsername; const loaded = { username, partnerName: profile.partnerName?.trim() || username, region: profile.region ?? '' }; setValues(loaded); setSnapshot(loaded); }).catch((error) => Alert.alert('Profil tidak dapat dimuat', error instanceof Error ? error.message : 'Terjadi kesalahan')); }, [session.accessToken]);
   const cancel = () => { setValues(snapshot); setCurrentPassword(''); setNewPassword(''); setEditing(false); };
   const save = async () => {
     if (!values.username.trim() || !values.partnerName.trim()) return Alert.alert('Data belum lengkap', 'Username dan nama mitra wajib diisi.');
@@ -24,7 +26,8 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
     setSaving(true);
     try {
       const result = await updateOwnProfile(session, { username: values.username.trim(), partnerName: values.partnerName.trim(), region: values.region.trim(), currentPassword: currentPassword || undefined, newPassword: newPassword || undefined });
-      const updated = { username: result.profile.username, partnerName: result.profile.partnerName, region: result.profile.region ?? '' };
+      const username = result.profile.username?.trim() || values.username.trim() || safeUsername;
+      const updated = { username, partnerName: result.profile.partnerName?.trim() || values.partnerName.trim() || username, region: result.profile.region ?? '' };
       setValues(updated); setSnapshot(updated); setCurrentPassword(''); setNewPassword(''); setEditing(false); onSessionUpdated(result.session);
       Alert.alert('Profil tersimpan', 'Perubahan akun berhasil disimpan ke pusat.');
     } catch (error) { Alert.alert('Gagal menyimpan', error instanceof Error ? error.message : 'Terjadi kesalahan'); }
@@ -33,7 +36,7 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
   const confirmLogout = () => Alert.alert('Keluar dari aplikasi?', 'Anda harus terhubung ke internet untuk login kembali.', [{ text: 'Batal', style: 'cancel' }, { text: 'Logout', style: 'destructive', onPress: onLogout }]);
 
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-    <View style={styles.identity}><View style={styles.avatar}><Text style={styles.avatarText}>{values.partnerName.slice(0, 1).toUpperCase()}</Text></View><View style={styles.identityCopy}><Text style={styles.identityName}>{values.partnerName}</Text><Text style={styles.identityMeta}>{session.role === 'pusat' ? 'Admin pusat' : 'Akun mitra'} · {session.id.slice(0, 8)}</Text></View>{!editing && <Pressable onPress={() => setEditing(true)} style={styles.editButton}><Text style={styles.editText}>Edit Profil</Text></Pressable>}</View>
+    <View style={styles.identity}><View style={styles.avatar}><Text style={styles.avatarText}>{(values.partnerName || safePartnerName).slice(0, 1).toUpperCase()}</Text></View><View style={styles.identityCopy}><Text style={styles.identityName}>{values.partnerName || safePartnerName}</Text><Text style={styles.identityMeta}>{session.role === 'pusat' ? 'Admin pusat' : 'Akun mitra'} · {(session.id || '').slice(0, 8)}</Text></View>{!editing && <Pressable onPress={() => setEditing(true)} style={styles.editButton}><Text style={styles.editText}>Edit Profil</Text></Pressable>}</View>
     <View style={styles.card}><Text style={styles.sectionTitle}>Informasi akun</Text><Field label="Username" value={values.username} onChange={(value) => change('username', value)} editable={editing} autoCapitalize="none" /><Field label="Nama mitra" value={values.partnerName} onChange={(value) => change('partnerName', value)} editable={editing} /><Field label="Wilayah" value={values.region} onChange={(value) => change('region', value)} editable={editing} placeholder="Belum dilengkapi" /><Field label="Password" value={editing ? currentPassword : '••••••••'} onChange={setCurrentPassword} editable={editing} secure placeholder="Password saat ini" /></View>
     {editing && <View style={styles.card}><Text style={styles.sectionTitle}>Password baru</Text><Text style={styles.helper}>Kosongkan jika tidak ingin mengganti password.</Text><Field label="Password baru" value={newPassword} onChange={setNewPassword} editable secure placeholder="Minimal 8 karakter" /></View>}
     {editing ? <View style={styles.actions}><Pressable disabled={saving} onPress={cancel} style={styles.cancel}><Text style={styles.cancelText}>Batal</Text></Pressable><Pressable disabled={saving} onPress={() => void save()} style={[styles.save, saving && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? 'Menyimpan...' : 'Simpan perubahan'}</Text></Pressable></View> : <Pressable accessibilityRole="button" onPress={confirmLogout} style={styles.logoutButton}><Text style={styles.logoutText}>Logout</Text><Text style={styles.logoutHint}>Keluar dari akun di perangkat ini</Text></Pressable>}

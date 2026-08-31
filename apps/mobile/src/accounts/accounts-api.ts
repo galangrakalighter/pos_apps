@@ -28,7 +28,9 @@ export async function updateOwnProfile(
   changes: { username: string; partnerName: string; region: string; currentPassword?: string; newPassword?: string },
 ) {
   const profile = await request<UserProfile>('/profile', session, { method: 'PATCH', body: JSON.stringify(changes) });
-  const updatedSession = { ...session, name: profile.username, partnerName: profile.partnerName };
+  const username = profile.username?.trim() || session.name || 'akun';
+  const partnerName = profile.partnerName?.trim() || username;
+  const updatedSession = { ...session, name: username, partnerName };
   await saveSession(updatedSession);
   return { profile, session: updatedSession };
 }
