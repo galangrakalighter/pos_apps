@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, FlatList, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { CartPanel } from '../components/CartPanel';
 import { ProductCard } from '../components/ProductCard';
 import { PaymentMethod, recordTransaction } from '../database/sales.repository';
@@ -7,6 +7,7 @@ import { rupiah } from '../data/mock';
 import { ensureLocalPartnerProducts, getLocalProducts } from '../products/products-sync';
 import { colors } from '../theme';
 import { CartItem, Product, Session } from '../types';
+import { getLocalQrisImage } from '../payments/local-qris';
 
 export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSaved }: { isTablet: boolean; session: Session; refreshKey?: number; onTransactionSaved: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
@@ -18,6 +19,7 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
   const [showCart, setShowCart] = useState(false);
   const [paymentVisible, setPaymentVisible] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [qrisImageUri, setQrisImageUri] = useState<string | null>(null);
 
   useEffect(() => {
     setCart([]);
@@ -26,6 +28,7 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
       await ensureLocalPartnerProducts(session).catch(() => undefined);
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
       setRawMaterials(await getLocalProducts(session.mitraId, 'bahan_baku'));
+      setQrisImageUri(await getLocalQrisImage(session.mitraId));
     };
     void load();
   }, [session.accessToken, session.mitraId, refreshKey]);
@@ -71,11 +74,11 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
       </View>
       {isTablet && <View style={styles.cartColumn}>{cartPanel}</View>}
     </>}
-    <PaymentModal visible={paymentVisible} total={total} saving={paying} onClose={() => !paying && setPaymentVisible(false)} onConfirm={checkout} />
+    <PaymentModal visible={paymentVisible} total={total} qrisImageUri={qrisImageUri} saving={paying} onClose={() => !paying && setPaymentVisible(false)} onConfirm={checkout} />
   </View>;
 }
 
-function PaymentModal({ visible, total, saving, onClose, onConfirm }: { visible: boolean; total: number; saving: boolean; onClose: () => void; onConfirm: (method: PaymentMethod, amountPaid: number, note: string) => void }) {
+function PaymentModal({ visible, total, qrisImageUri, saving, onClose, onConfirm }: { visible: boolean; total: number; qrisImageUri: string | null; saving: boolean; onClose: () => void; onConfirm: (method: PaymentMethod, amountPaid: number, note: string) => void }) {
   const [method, setMethod] = useState<PaymentMethod>('tunai');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
@@ -83,8 +86,10 @@ function PaymentModal({ visible, total, saving, onClose, onConfirm }: { visible:
   const paid = method === 'tunai' ? Number(amount || 0) : total;
   const change = Math.max(0, paid - total);
   const insufficient = method === 'tunai' && paid < total;
+  const qrisUnavailable = method === 'qris' && !qrisImageUri;
   const confirm = () => {
     if (insufficient) return Alert.alert('Pembayaran kurang', `Masih kurang ${rupiah(total - paid)}.`);
+    if (qrisUnavailable) return Alert.alert('QRIS belum tersedia', 'Konfigurasikan QRIS merchant resmi terlebih dahulu.');
     onConfirm(method, paid, note);
   };
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
@@ -93,11 +98,12 @@ function PaymentModal({ visible, total, saving, onClose, onConfirm }: { visible:
         <View style={paymentStyles.header}><View><Text style={paymentStyles.title}>Pembayaran</Text><Text style={paymentStyles.caption}>Periksa total sebelum menyimpan transaksi</Text></View><Pressable onPress={onClose}><Text style={paymentStyles.close}>×</Text></Pressable></View>
         <View style={paymentStyles.totalBox}><Text style={paymentStyles.totalLabel}>Total yang harus dibayar</Text><Text style={paymentStyles.totalValue}>{rupiah(total)}</Text></View>
         <Text style={paymentStyles.label}>Metode pembayaran</Text>
-        <View style={paymentStyles.methods}>{(['tunai', 'qris', 'transfer', 'debit'] as PaymentMethod[]).map((item) => <Pressable key={item} onPress={() => setMethod(item)} style={[paymentStyles.method, method === item && paymentStyles.methodActive]}><Text style={[paymentStyles.methodText, method === item && paymentStyles.methodTextActive]}>{paymentLabel(item)}</Text></Pressable>)}</View>
+        <View style={paymentStyles.methods}>{(['tunai', 'qris'] as PaymentMethod[]).map((item) => <Pressable key={item} onPress={() => setMethod(item)} style={[paymentStyles.method, method === item && paymentStyles.methodActive]}><Text style={[paymentStyles.methodText, method === item && paymentStyles.methodTextActive]}>{paymentLabel(item)}</Text></Pressable>)}</View>
         {method === 'tunai' && <><Text style={paymentStyles.label}>Uang diterima</Text><TextInput value={amount} onChangeText={(value) => setAmount(value.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="Masukkan nominal pembayaran" placeholderTextColor="#98A2B3" style={paymentStyles.input} /><View style={paymentStyles.quickRow}><Pressable onPress={() => setAmount(String(total))} style={paymentStyles.quick}><Text style={paymentStyles.quickText}>Uang pas</Text></Pressable>{[20000, 50000, 100000].filter((value) => value >= total).slice(0, 2).map((value) => <Pressable key={value} onPress={() => setAmount(String(value))} style={paymentStyles.quick}><Text style={paymentStyles.quickText}>{rupiah(value)}</Text></Pressable>)}</View></>}
+        {method === 'qris' && <View style={paymentStyles.qrisBox}>{qrisImageUri ? <Image key={qrisImageUri} source={{ uri: qrisImageUri }} resizeMode="contain" style={paymentStyles.qrisImage} /> : <View style={paymentStyles.qrisMissing}><Text style={paymentStyles.qrisMissingTitle}>QRIS Mitra belum dipasang</Text><Text style={paymentStyles.qrisMissingText}>Buka halaman Profil untuk memilih gambar QRIS terlebih dahulu.</Text></View>}<Text style={paymentStyles.qrisAmount}>Total transaksi: {rupiah(total)}</Text><Text style={paymentStyles.qrisHint}>QRIS gambar bersifat statis. Pelanggan memasukkan nominal sesuai total, lalu kasir memastikan pembayaran diterima.</Text></View>}
         <View style={paymentStyles.breakdown}><Summary label="Total" value={rupiah(total)} /><Summary label="Dibayar" value={rupiah(paid)} />{method === 'tunai' && <Summary label={insufficient ? 'Kekurangan' : 'Kembalian'} value={rupiah(insufficient ? total - paid : change)} warning={insufficient} strong />}</View>
         <Text style={paymentStyles.label}>Catatan transaksi (opsional)</Text><TextInput value={note} onChangeText={setNote} placeholder="Contoh: pelanggan member" placeholderTextColor="#98A2B3" style={paymentStyles.input} />
-        <Pressable disabled={saving || insufficient} onPress={confirm} style={[paymentStyles.confirm, (saving || insufficient) && { opacity: .45 }]}><Text style={paymentStyles.confirmText}>{saving ? 'Menyimpan...' : `Konfirmasi ${paymentLabel(method)}`}</Text></Pressable>
+        <Pressable disabled={saving || insufficient || qrisUnavailable} onPress={confirm} style={[paymentStyles.confirm, (saving || insufficient || qrisUnavailable) && { opacity: .45 }]}><Text style={paymentStyles.confirmText}>{saving ? 'Menyimpan...' : `Konfirmasi ${paymentLabel(method)}`}</Text></Pressable>
         <Text style={paymentStyles.offline}>Pembayaran tetap dapat disimpan tanpa internet.</Text>
       </ScrollView></View>
     </KeyboardAvoidingView>
@@ -108,4 +114,4 @@ function Summary({ label, value, warning, strong }: { label: string; value: stri
 const paymentLabel = (method: PaymentMethod) => ({ tunai: 'Tunai', qris: 'QRIS', transfer: 'Transfer', debit: 'Kartu Debit' })[method];
 
 const styles = StyleSheet.create({ screen: { flex: 1, flexDirection: 'row', backgroundColor: colors.canvas }, catalog: { flex: 1 }, cartColumn: { width: '35%', minWidth: 320, maxWidth: 430, borderLeftWidth: 1, borderLeftColor: colors.line }, toolbar: { paddingHorizontal: 16, paddingTop: 15 }, search: { height: 44, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, color: colors.ink }, categories: { flexDirection: 'row', gap: 8, paddingHorizontal: 16, paddingVertical: 12, flexWrap: 'wrap' }, chip: { paddingHorizontal: 15, paddingVertical: 8, borderRadius: 999, backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.line }, activeChip: { backgroundColor: colors.primary, borderColor: colors.primary }, chipText: { color: colors.muted, fontWeight: '700', fontSize: 12 }, activeChipText: { color: '#FFF' }, grid: { paddingHorizontal: 16, paddingBottom: 90 }, gridRow: { gap: 12, marginBottom: 12 }, empty: { color: colors.muted, textAlign: 'center', padding: 30 }, floatingCart: { position: 'absolute', left: 16, right: 16, bottom: 14, backgroundColor: colors.primary, padding: 16, borderRadius: 14, alignItems: 'center' }, floatingText: { color: '#FFF', fontWeight: '800' } });
-const paymentStyles = StyleSheet.create({ backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,.55)' }, sheet: { maxHeight: '92%', width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, title: { color: colors.ink, fontSize: 22, fontWeight: '900' }, caption: { color: colors.muted, fontSize: 11, marginTop: 3 }, close: { color: colors.muted, fontSize: 30, padding: 7 }, totalBox: { backgroundColor: colors.primarySoft, borderRadius: 16, padding: 17, marginTop: 15 }, totalLabel: { color: colors.primary, fontSize: 11, fontWeight: '700' }, totalValue: { color: colors.primary, fontSize: 29, fontWeight: '900', marginTop: 4 }, label: { color: colors.ink, fontWeight: '800', fontSize: 12, marginTop: 16, marginBottom: 7 }, methods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, method: { borderWidth: 1, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 10 }, methodActive: { backgroundColor: colors.primary, borderColor: colors.primary }, methodText: { color: colors.muted, fontSize: 11, fontWeight: '800' }, methodTextActive: { color: '#FFF' }, input: { height: 48, borderWidth: 1, borderColor: colors.line, borderRadius: 11, paddingHorizontal: 13, color: colors.ink, backgroundColor: '#FAFAFA' }, quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 }, quick: { backgroundColor: colors.primarySoft, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 7 }, quickText: { color: colors.primary, fontSize: 10, fontWeight: '800' }, breakdown: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.line, paddingVertical: 10, marginTop: 16 }, summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 }, summaryLabel: { color: colors.muted }, summaryValue: { color: colors.ink, fontWeight: '800' }, confirm: { backgroundColor: colors.primary, borderRadius: 13, padding: 15, alignItems: 'center', marginTop: 18 }, confirmText: { color: '#FFF', fontWeight: '900' }, offline: { color: colors.muted, textAlign: 'center', fontSize: 10, marginTop: 9, marginBottom: 10 } });
+const paymentStyles = StyleSheet.create({ backdrop: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(16,24,40,.55)' }, sheet: { maxHeight: '92%', width: '100%', maxWidth: 620, alignSelf: 'center', backgroundColor: colors.surface, borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }, header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, title: { color: colors.ink, fontSize: 22, fontWeight: '900' }, caption: { color: colors.muted, fontSize: 11, marginTop: 3 }, close: { color: colors.muted, fontSize: 30, padding: 7 }, totalBox: { backgroundColor: colors.primarySoft, borderRadius: 16, padding: 17, marginTop: 15 }, totalLabel: { color: colors.primary, fontSize: 11, fontWeight: '700' }, totalValue: { color: colors.primary, fontSize: 29, fontWeight: '900', marginTop: 4 }, label: { color: colors.ink, fontWeight: '800', fontSize: 12, marginTop: 16, marginBottom: 7 }, methods: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 }, method: { borderWidth: 1, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 13, paddingVertical: 10 }, methodActive: { backgroundColor: colors.primary, borderColor: colors.primary }, methodText: { color: colors.muted, fontSize: 11, fontWeight: '800' }, methodTextActive: { color: '#FFF' }, input: { height: 48, borderWidth: 1, borderColor: colors.line, borderRadius: 11, paddingHorizontal: 13, color: colors.ink, backgroundColor: '#FAFAFA' }, quickRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 }, quick: { backgroundColor: colors.primarySoft, borderRadius: 8, paddingHorizontal: 11, paddingVertical: 7 }, quickText: { color: colors.primary, fontSize: 10, fontWeight: '800' }, qrisBox: { alignItems: 'center', backgroundColor: colors.canvas, borderRadius: 14, padding: 14, marginTop: 14 }, qrisImage: { width: 220, height: 220, borderRadius: 10, backgroundColor: '#FFF' }, qrisMissing: { minHeight: 150, width: '100%', borderWidth: 1, borderStyle: 'dashed', borderColor: colors.line, borderRadius: 12, alignItems: 'center', justifyContent: 'center', padding: 20 }, qrisMissingTitle: { color: colors.ink, fontWeight: '900', textAlign: 'center' }, qrisMissingText: { color: colors.muted, fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 6 }, qrisAmount: { color: colors.ink, fontWeight: '900', fontSize: 16, marginTop: 10 }, qrisHint: { color: colors.muted, fontSize: 10, textAlign: 'center', marginTop: 4 }, breakdown: { borderTopWidth: 1, borderBottomWidth: 1, borderColor: colors.line, paddingVertical: 10, marginTop: 16 }, summaryRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 5 }, summaryLabel: { color: colors.muted }, summaryValue: { color: colors.ink, fontWeight: '800' }, confirm: { backgroundColor: colors.primary, borderRadius: 13, padding: 15, alignItems: 'center', marginTop: 18 }, confirmText: { color: '#FFF', fontWeight: '900' }, offline: { color: colors.muted, textAlign: 'center', fontSize: 10, marginTop: 9, marginBottom: 10 } });
