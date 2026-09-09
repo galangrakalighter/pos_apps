@@ -34,7 +34,8 @@
           "position": "relative",
           "legacyVisible": "sticky-immersive"
         }
-      ]
+      ],
+      "expo-font"
     ],
     "extra": {
       "expo-navigation-bar": {
