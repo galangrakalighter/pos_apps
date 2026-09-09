@@ -131,4 +131,11 @@ export async function initializeDatabase(): Promise<void> {
       PRAGMA user_version = 10;
     `);
   }
+  if ((version?.user_version ?? 0) < 11) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_history)');
+    if (!columns.some((column) => column.name === 'raw_material_addons')) {
+      await db.execAsync(`ALTER TABLE local_history ADD COLUMN raw_material_addons TEXT NOT NULL DEFAULT '[]'`);
+    }
+    await db.execAsync('PRAGMA user_version = 11');
+  }
 }

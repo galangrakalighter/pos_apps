@@ -208,14 +208,19 @@ export class AccountsService {
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, filename), file.buffer);
     const imageUrl = `/api/v1/profile/images/${filename}`;
-    const rows: UserProfileRow[] = await this.dataSource.query(
+    const result = await this.dataSource.query(
       `UPDATE users SET profile_image_url = $1 WHERE id = $2::uuid
        RETURNING id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName",
                  wilayah AS region, "isPusat" AS "isPusat", profile_image_url AS "profileImageUrl"`,
       [imageUrl, user.id],
     );
-    if (!rows[0]) throw new UnauthorizedException('User tidak ditemukan');
-    return rows[0];
+    // Beberapa versi kombinasi TypeORM/pg mengembalikan [rows, rowCount]
+    // untuk query UPDATE ... RETURNING. Endpoint harus selalu mengirim satu
+    // object profil agar klien tidak membaca response yang sebenarnya sukses
+    // sebagai response tidak valid.
+    const profile = this.resultRows<UserProfileRow>(result)[0];
+    if (!profile) throw new UnauthorizedException('User tidak ditemukan');
+    return profile;
   }
 
   async profileImage(filename: string) {
@@ -229,6 +234,12 @@ export class AccountsService {
 
   private isUniqueViolation(error: unknown): error is { code: string } {
     return typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23505';
+  }
+
+  private resultRows<T>(result: unknown): T[] {
+    if (!Array.isArray(result)) return [];
+    if (result.length === 2 && Array.isArray(result[0]) && typeof result[1] === 'number') return result[0] as T[];
+    return result as T[];
   }
 
   private convertUnit(quantity: number, from: string, to: string): number | null {

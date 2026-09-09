@@ -47,11 +47,16 @@ export async function uploadOwnProfileImage(session: Session, asset: { uri: stri
   const response = await fetch(`${API_URL}/profile/image`, {
     method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` }, body: form,
   });
-  const profile = await response.json().catch(() => null) as UserProfile | { message?: string | string[] } | null;
+  const payload = await response.json().catch(() => null) as UserProfile | [UserProfile[], number] | UserProfile[] | { message?: string | string[] } | null;
   if (!response.ok) {
-    const detail = profile && 'message' in profile ? profile.message : undefined;
+    const detail = payload && !Array.isArray(payload) && 'message' in payload ? payload.message : undefined;
     throw new Error(Array.isArray(detail) ? detail[0] : detail ?? `Upload foto gagal (${response.status})`);
   }
+  // Tetap kompatibel dengan API lama yang mungkin mengirim hasil mentah
+  // UPDATE ... RETURNING sebagai [rows, rowCount].
+  const profile = Array.isArray(payload)
+    ? (Array.isArray(payload[0]) ? payload[0][0] : payload[0])
+    : payload;
   if (!profile || !('id' in profile)) throw new Error('Respons foto profil tidak valid');
   const updatedSession = { ...session, profileImageUrl: profile.profileImageUrl ?? null };
   await saveSession(updatedSession);

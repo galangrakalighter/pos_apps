@@ -13,6 +13,7 @@ export interface PendingSale {
   amount_paid_cents: number;
   change_cents: number;
   transaction_total_cents: number;
+  raw_material_addons: string;
 }
 
 export type PaymentMethod = 'tunai' | 'qris' | 'transfer' | 'debit';
@@ -22,6 +23,7 @@ export interface LocalSale {
   created_at: string; sync_status: 'pending' | 'synced'; payment_method: PaymentMethod;
   transaction_uuid: string; transaction_total_cents: number; amount_paid_cents: number; change_cents: number;
   note: string | null;
+  raw_material_addons: string;
 }
 
 export async function recordSale(ownerId: string, productId: number, quantity: number, note?: string) {
@@ -66,13 +68,14 @@ export async function recordSale(ownerId: string, productId: number, quantity: n
 export async function recordTransaction(
   ownerId: string,
   items: Array<{ productId: number; quantity: number }>,
-  payment: { method: PaymentMethod; amountPaidCents: number; note?: string },
+  payment: { method: PaymentMethod; amountPaidCents: number; note?: string; rawMaterialAddons?: Array<{ productId: number; name: string }> },
 ) {
   if (!items.length || items.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) throw new Error('Keranjang tidak valid');
   const db = await getDatabase();
   const transactionUuid = Crypto.randomUUID();
   const createdAt = new Date().toISOString();
   let totalCents = 0;
+  const rawMaterialAddons = JSON.stringify(payment.rawMaterialAddons ?? []);
 
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const pricedItems: Array<{ productId: number; quantity: number; priceCents: number }> = [];
@@ -102,11 +105,12 @@ export async function recordTransaction(
       await transaction.runAsync(
         `INSERT INTO local_history
           (uuid, product_id, sold_quantity, price_cents, created_at, note, sync_status, owner_id,
-           transaction_uuid, payment_method, amount_paid_cents, change_cents, transaction_total_cents)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?)`,
+           transaction_uuid, payment_method, amount_paid_cents, change_cents, transaction_total_cents,
+           raw_material_addons)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
         Crypto.randomUUID(), item.productId, item.quantity, item.priceCents, createdAt,
         payment.note ?? 'Transaksi POS', ownerId, transactionUuid, payment.method,
-        amountPaidCents, changeCents, totalCents,
+        amountPaidCents, changeCents, totalCents, rawMaterialAddons,
       );
     }
   });
@@ -118,7 +122,7 @@ export async function getPendingSales(ownerId: string, limit = 100): Promise<Pen
   return db.getAllAsync<PendingSale>(
     `SELECT uuid, product_id, sold_quantity, price_cents, created_at, note,
             COALESCE(transaction_uuid, uuid) AS transaction_uuid, payment_method,
-            amount_paid_cents, change_cents, transaction_total_cents
+            amount_paid_cents, change_cents, transaction_total_cents, raw_material_addons
        FROM local_history
       WHERE owner_id = ? AND sync_status = 'pending'
       ORDER BY created_at
@@ -158,7 +162,8 @@ export async function getLocalSalesHistory(ownerId: string): Promise<LocalSale[]
     `SELECT h.uuid, COALESCE(p.name, 'Produk') AS product_name, h.sold_quantity,
             h.price_cents, h.created_at, h.sync_status, h.payment_method,
             COALESCE(h.transaction_uuid, h.uuid) AS transaction_uuid,
-            h.transaction_total_cents, h.amount_paid_cents, h.change_cents, h.note
+            h.transaction_total_cents, h.amount_paid_cents, h.change_cents, h.note,
+            h.raw_material_addons
        FROM local_history h
        LEFT JOIN local_products p ON p.server_id = h.product_id AND p.owner_id = h.owner_id
       WHERE h.owner_id = ?

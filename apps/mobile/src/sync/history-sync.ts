@@ -44,6 +44,10 @@ async function performSync(session: SyncSession): Promise<void> {
           amountPaid: centsToDecimal(sale.amount_paid_cents),
           changeAmount: centsToDecimal(sale.change_cents),
           transactionTotal: centsToDecimal(sale.transaction_total_cents),
+          rawMaterialAddons: (() => {
+            try { return JSON.parse(sale.raw_material_addons || '[]') as Array<{ productId: number; name: string }>; }
+            catch { return []; }
+          })().map((item) => ({ productId: String(item.productId), name: item.name })),
         })),
       }),
     });

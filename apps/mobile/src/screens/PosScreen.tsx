@@ -10,7 +10,9 @@ import { CartItem, Product, Session } from '../types';
 
 export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSaved }: { isTablet: boolean; session: Session; refreshKey?: number; onTransactionSaved: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
+  const [rawMaterials, setRawMaterials] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [selectedRawMaterialIds, setSelectedRawMaterialIds] = useState<number[]>([]);
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Semua');
   const [showCart, setShowCart] = useState(false);
@@ -19,9 +21,11 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
 
   useEffect(() => {
     setCart([]);
+    setSelectedRawMaterialIds([]);
     const load = async () => {
       await ensureLocalPartnerProducts(session).catch(() => undefined);
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
+      setRawMaterials(await getLocalProducts(session.mitraId, 'bahan_baku'));
     };
     void load();
   }, [session.accessToken, session.mitraId, refreshKey]);
@@ -36,6 +40,7 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
     return found ? current.map((item) => item.id === product.id ? { ...item, quantity: Math.min(item.quantity + 1, item.stock) } : item) : [...current, { ...product, quantity: 1 }];
   });
   const changeQuantity = (id: number, delta: number) => setCart((current) => current.map((item) => item.id === id ? { ...item, quantity: Math.min(item.stock, item.quantity + delta) } : item).filter((item) => item.quantity > 0));
+  const toggleRawMaterial = (id: number) => setSelectedRawMaterialIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
 
   const checkout = async (method: PaymentMethod, amountPaid: number, note: string) => {
     setPaying(true);
@@ -43,16 +48,19 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
       const result = await recordTransaction(
         session.mitraId,
         cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
-        { method, amountPaidCents: Math.round(amountPaid * 100), note: note.trim() || undefined },
+        {
+          method, amountPaidCents: Math.round(amountPaid * 100), note: note.trim() || undefined,
+          rawMaterialAddons: rawMaterials.filter((item) => selectedRawMaterialIds.includes(item.id)).map((item) => ({ productId: item.id, name: item.name })),
+        },
       );
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
-      setCart([]); setShowCart(false); setPaymentVisible(false); onTransactionSaved();
+      setCart([]); setSelectedRawMaterialIds([]); setShowCart(false); setPaymentVisible(false); onTransactionSaved();
       Alert.alert('Pembayaran berhasil', `Total ${rupiah(result.totalCents / 100)}\nMetode ${paymentLabel(method)}${method === 'tunai' ? `\nKembalian ${rupiah(result.changeCents / 100)}` : ''}\n\nTransaksi tersimpan dan siap disinkronkan.`);
     } catch (error) { Alert.alert('Transaksi gagal', error instanceof Error ? error.message : 'Tidak dapat menyimpan transaksi'); }
     finally { setPaying(false); }
   };
 
-  const cartPanel = <CartPanel items={cart} onChangeQuantity={changeQuantity} onCheckout={() => setPaymentVisible(true)} onBack={!isTablet ? () => setShowCart(false) : undefined} />;
+  const cartPanel = <CartPanel items={cart} rawMaterials={rawMaterials} selectedRawMaterialIds={selectedRawMaterialIds} onToggleRawMaterial={toggleRawMaterial} onChangeQuantity={changeQuantity} onCheckout={() => setPaymentVisible(true)} onBack={!isTablet ? () => setShowCart(false) : undefined} />;
   return <View style={styles.screen}>
     {!isTablet && showCart ? cartPanel : <>
       <View style={styles.catalog}>
