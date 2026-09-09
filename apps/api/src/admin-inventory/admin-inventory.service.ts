@@ -9,6 +9,7 @@ import { UpdateWarehouseProductDto } from './dto/update-warehouse-product.dto';
 import { CreateFinishedProductDto } from './dto/create-finished-product.dto';
 import { UpdateFinishedProductDto } from './dto/update-finished-product.dto';
 import { UpdateOwnFinishedProductDto } from './dto/update-own-finished-product.dto';
+import { StockAdjustmentItemDto } from './dto/sync-stock-adjustments.dto';
 
 @Injectable()
 export class AdminInventoryService {
@@ -49,7 +50,7 @@ export class AdminInventoryService {
     if (!users[0]) throw new NotFoundException('Mitra tidak ditemukan');
     const products = await this.dataSource.query(
       `SELECT p.id::text, p.nama_produk AS name,
-              CASE WHEN p.jenis_produk = 'produk_jadi' THEN COALESCE(cap.capacity, 0) ELSE p.stock END::float8 AS stock,
+              p.stock::float8 AS stock,
               p.harga::text AS price, p.jenis_produk AS kind, COALESCE(p.kategori, 'Tanpa kategori') AS category,
               p.image_url AS "imageUrl", p.master_produk_id::text AS "masterId", master.satuan AS unit,
               p.updated_at AS "updatedAt"
@@ -73,7 +74,7 @@ export class AdminInventoryService {
     if (user.isPusat) throw new ForbiddenException('Endpoint ini khusus akun Mitra');
     return this.dataSource.query(
       `SELECT p.id::text, p.nama_produk AS name,
-              CASE WHEN p.jenis_produk = 'produk_jadi' THEN COALESCE(cap.capacity, 0) ELSE p.stock END::float8 AS stock,
+              p.stock::float8 AS stock,
               p.harga::text AS price,
               p.jenis_produk AS kind,
               COALESCE(p.kategori, master.tipe, CASE WHEN p.jenis_produk = 'produk_jadi' THEN 'Produk jadi' ELSE 'Bahan baku' END) AS category,
@@ -139,6 +140,43 @@ export class AdminInventoryService {
     );
     if (!rows[0]) throw new NotFoundException('Produk jadi Mitra tidak ditemukan');
     return rows[0];
+  }
+
+  async syncStockAdjustments(user: AuthenticatedUser, items: StockAdjustmentItemDto[]) {
+    if (user.isPusat) throw new ForbiddenException('Endpoint ini khusus akun Mitra');
+    if (!items.length) return { acknowledgedUuids: [] };
+    if (new Set(items.map((item) => item.uuid)).size !== items.length) throw new BadRequestException('UUID penyesuaian stok tidak boleh duplikat');
+    await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      for (const item of [...items].sort((a, b) => Number(a.productId) - Number(b.productId))) {
+        const duplicate: Array<{ uuid: string }> = await manager.query(
+          `SELECT uuid::text FROM partner_stock_adjustments WHERE uuid = $1::uuid AND mitra_id = $2::uuid`, [item.uuid, user.id],
+        );
+        if (duplicate[0]) continue;
+        const products: Array<{ id: string; kind: 'bahan_baku' | 'produk_jadi'; stock: number }> = await manager.query(
+          `SELECT id::text, jenis_produk AS kind, stock::float8 AS stock FROM produk_mitra
+            WHERE id = $1::bigint AND mitra_id = $2::uuid FOR UPDATE`, [item.productId, user.id],
+        );
+        const product = products[0];
+        if (!product) throw new NotFoundException('Produk Mitra tidak ditemukan');
+        if (product.kind === 'bahan_baku' && item.delta > 0) throw new ForbiddenException('Bahan baku hanya dapat ditambah melalui pesanan ke Pusat');
+        if (product.stock + item.delta < -0.000001) throw new ConflictException('Stok tidak mencukupi untuk dikurangi');
+        const inserted = await manager.query(
+          `INSERT INTO partner_stock_adjustments (uuid, mitra_id, product_id, delta, created_at)
+           VALUES ($1::uuid, $2::uuid, $3::bigint, $4::numeric, $5::timestamptz)
+           ON CONFLICT (uuid) DO NOTHING RETURNING uuid::text`,
+          [item.uuid, user.id, item.productId, item.delta, item.createdAt],
+        );
+        if (this.resultRows<{ uuid: string }>(inserted).length) await manager.query(
+          `UPDATE produk_mitra SET stock = GREATEST(0, stock + $1::numeric), updated_at = now()
+            WHERE id = $2::bigint AND mitra_id = $3::uuid`, [item.delta, item.productId, user.id],
+        );
+      }
+    });
+    const acknowledged: Array<{ uuid: string }> = await this.dataSource.query(
+      `SELECT uuid::text FROM partner_stock_adjustments WHERE mitra_id = $1::uuid AND uuid = ANY($2::uuid[])`,
+      [user.id, items.map((item) => item.uuid)],
+    );
+    return { acknowledgedUuids: acknowledged.map((item) => item.uuid) };
   }
 
   async createFinishedProduct(admin: AuthenticatedUser, mitraId: string, dto: CreateFinishedProductDto) {

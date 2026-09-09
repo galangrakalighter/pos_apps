@@ -115,4 +115,20 @@ export async function initializeDatabase(): Promise<void> {
       PRAGMA user_version = 9;
     `);
   }
+  if ((version?.user_version ?? 0) < 10) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_stock_adjustments (
+        uuid TEXT PRIMARY KEY NOT NULL,
+        owner_id TEXT NOT NULL,
+        product_id INTEGER NOT NULL,
+        delta REAL NOT NULL CHECK (delta <> 0),
+        created_at TEXT NOT NULL,
+        sync_status TEXT NOT NULL DEFAULT 'pending' CHECK (sync_status IN ('pending', 'synced')),
+        synced_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_local_stock_adjustments_pending
+        ON local_stock_adjustments(owner_id, sync_status, created_at);
+      PRAGMA user_version = 10;
+    `);
+  }
 }

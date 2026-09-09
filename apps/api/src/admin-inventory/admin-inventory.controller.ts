@@ -10,6 +10,7 @@ import { UpdatePartnerProductPriceDto } from './dto/update-partner-product-price
 import { CreateFinishedProductDto } from './dto/create-finished-product.dto';
 import { UpdateFinishedProductDto } from './dto/update-finished-product.dto';
 import { UpdateOwnFinishedProductDto } from './dto/update-own-finished-product.dto';
+import { SyncStockAdjustmentsDto } from './dto/sync-stock-adjustments.dto';
 
 @Controller('admin/partners')
 @UseGuards(JwtAuthGuard)
@@ -92,6 +93,7 @@ export class WarehouseImagesController {
 export class PartnerProductsController {
   constructor(private readonly service: AdminInventoryService) {}
   @Get('mine') mine(@CurrentUser() user: AuthenticatedUser) { return this.service.myProducts(user); }
+  @Post('stock-adjustments/sync') stockAdjustments(@CurrentUser() user: AuthenticatedUser, @Body() dto: SyncStockAdjustmentsDto) { return this.service.syncStockAdjustments(user, dto.items); }
   @Patch(':id/price') price(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdatePartnerProductPriceDto) { return this.service.updateMyProductPrice(user, String(id), dto.price); }
   @Patch(':id/finished-stock') finishedStock(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number, @Body() dto: UpdateOwnFinishedProductDto) { return this.service.updateMyFinishedProduct(user, String(id), dto); }
 }

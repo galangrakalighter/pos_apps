@@ -3,6 +3,7 @@ import { API_URL } from '../config';
 import { getDatabase } from '../database/db';
 import { Product, Session } from '../types';
 import { syncHistory } from '../sync/history-sync';
+import { syncStockAdjustments } from '../sync/stock-adjustments-sync';
 
 type ServerRecipe = { ingredientProductId: string | null; quantityRequired: number };
 type ServerProduct = { id: string; name: string; stock: number; price: string; category: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string | null; recipeComplete: boolean; recipes?: ServerRecipe[]; imageUrl: string | null; updatedAt: string };
@@ -63,8 +64,9 @@ export async function refreshPartnerProducts(session: Session): Promise<void> {
   if (!network.isConnected || network.isInternetReachable === false) {
     throw new Error('Refresh stok memerlukan koneksi internet.');
   }
-  // Kirim penjualan lokal dahulu agar snapshot server yang ditarik sesudahnya
-  // tidak mengembalikan stok ke nilai sebelum transaksi offline.
+  // Perubahan stok manual harus dikirim sebelum penjualan. Produk jadi yang
+  // baru ditambah lokal mungkin langsung terjual sebelum perangkat online.
+  await syncStockAdjustments({ userId: session.mitraId, accessToken: session.accessToken });
   await syncHistory({ userId: session.id, accessToken: session.accessToken });
   await syncPartnerProducts(session);
 }

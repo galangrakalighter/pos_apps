@@ -3,6 +3,7 @@ import { API_URL } from '../config';
 import { syncPartnerProducts } from '../products/products-sync';
 import { Session } from '../types';
 import { syncHistory } from './history-sync';
+import { syncStockAdjustments } from './stock-adjustments-sync';
 
 let running: Promise<void> | null = null;
 
@@ -33,6 +34,7 @@ async function processTargetedSync(session: Session, onComplete?: () => void) {
   const job = await request<{ id: string } | null>(session, '/claim', { method: 'POST' });
   if (!job) return;
   try {
+    await syncStockAdjustments({ userId: session.mitraId, accessToken: session.accessToken });
     await syncHistory({ userId: session.id, accessToken: session.accessToken });
     await syncPartnerProducts(session);
     await request(session, `/${job.id}/finish`, { method: 'PATCH', body: JSON.stringify({ success: true }) });

@@ -24,7 +24,7 @@ export function LoginScreen({ onLogin }: Props) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <View style={styles.brand}><Image source={require('../../assets/login-logo.jpg')} resizeMode="cover" style={styles.logoImage} /><Text style={styles.brandName}>POS Mitra</Text><Text style={styles.tagline}>Jual cepat. Tetap jalan saat offline.</Text></View>
+      <View style={styles.brand}><Image source={require('../../assets/login-logo.png')} resizeMode="cover" style={styles.logoImage} /><Text style={styles.brandName}>POS Mitra</Text></View>
       <View style={styles.card}>
         <Text style={styles.title}>Selamat datang</Text><Text style={styles.subtitle}>Masuk menggunakan akun mitra atau pusat.</Text>
         <Text style={styles.label}>Username</Text>
