@@ -7,6 +7,7 @@ import { Product, Session } from '../types';
 import { createProcurementOrder, getMyOrders, RemoteOrder } from '../procurement/procurement-api';
 import { getWarehouseCatalog } from '../admin/admin-inventory-api';
 import { API_URL } from '../config';
+import { subscribeOrderRealtime } from '../realtime/order-realtime';
 
 type Tab = 'catalog' | 'status';
 const statusColors = { pending: colors.orange, diterima: colors.blue, dikirim: '#7A5AF8', selesai: colors.green };
@@ -53,6 +54,9 @@ export function OrderScreen({ isTablet, session }: { isTablet: boolean; session:
     try { setOrders(await getMyOrders(session)); } catch (error) { setOrdersError(error instanceof Error ? error.message : 'Status pesanan gagal dimuat'); } finally { setOrdersLoading(false); }
   }, [online, session]);
   useEffect(() => { if (!online) return; void loadOrders(); const timer = setInterval(() => void loadOrders(), 10000); return () => clearInterval(timer); }, [online, loadOrders]);
+  useEffect(() => subscribeOrderRealtime((event) => {
+    if (event.type === 'status') void loadOrders();
+  }), [loadOrders]);
 
   const lines = useMemo(() => catalog.flatMap((product) => {
     const quantity = Number(quantities[product.id]);

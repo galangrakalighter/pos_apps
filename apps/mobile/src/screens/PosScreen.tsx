@@ -8,7 +8,7 @@ import { ensureLocalPartnerProducts, getLocalProducts } from '../products/produc
 import { colors } from '../theme';
 import { CartItem, Product, Session } from '../types';
 
-export function PosScreen({ isTablet, session, onTransactionSaved }: { isTablet: boolean; session: Session; onTransactionSaved: () => void }) {
+export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSaved }: { isTablet: boolean; session: Session; refreshKey?: number; onTransactionSaved: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [query, setQuery] = useState('');
@@ -24,7 +24,7 @@ export function PosScreen({ isTablet, session, onTransactionSaved }: { isTablet:
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
     };
     void load();
-  }, [session.accessToken, session.mitraId]);
+  }, [session.accessToken, session.mitraId, refreshKey]);
 
   const categories = useMemo(() => ['Semua', ...Array.from(new Set(products.map((item) => item.category)))], [products]);
   const filtered = useMemo(() => products.filter((item) => (category === 'Semua' || item.category === category) && item.name.toLowerCase().includes(query.toLowerCase())), [products, category, query]);

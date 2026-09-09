@@ -1,18 +1,20 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors } from '../theme';
 import { ScreenName, Session } from '../types';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 
-const partnerItems: Array<{ id: ScreenName; label: string; icon: string }> = [
-  { id: 'pos', label: 'Kasir', icon: '▦' }, { id: 'history', label: 'Riwayat', icon: '↺' }, { id: 'inventory', label: 'Stok', icon: '□' }, { id: 'orders', label: 'Pesanan', icon: '⇄' }, { id: 'profile', label: 'Profil', icon: '○' },
+type IconName = React.ComponentProps<typeof MaterialCommunityIcons>['name'];
+const partnerItems: Array<{ id: ScreenName; label: string; icon: IconName }> = [
+  { id: 'pos', label: 'Kasir', icon: 'point-of-sale' }, { id: 'history', label: 'Riwayat', icon: 'receipt-text-clock-outline' }, { id: 'inventory', label: 'Stok', icon: 'package-variant-closed' }, { id: 'orders', label: 'Pesanan', icon: 'truck-delivery-outline' }, { id: 'profile', label: 'Profil', icon: 'account-circle-outline' },
 ];
-const adminItems: Array<{ id: ScreenName; label: string; icon: string }> = [
-  { id: 'adminSales', label: 'Monitoring', icon: '▥' }, { id: 'adminOrders', label: 'Order Masuk', icon: '⇩' }, { id: 'adminAccounts', label: 'Manajemen Mitra', icon: '＋' }, { id: 'inventory', label: 'Gudang', icon: '□' }, { id: 'profile', label: 'Profil', icon: '○' },
+const adminItems: Array<{ id: ScreenName; label: string; icon: IconName }> = [
+  { id: 'adminSales', label: 'Monitoring', icon: 'chart-box-outline' }, { id: 'adminOrders', label: 'Order Masuk', icon: 'inbox-arrow-down-outline' }, { id: 'adminAccounts', label: 'Manajemen Mitra', icon: 'store-cog-outline' }, { id: 'inventory', label: 'Gudang', icon: 'warehouse' }, { id: 'profile', label: 'Profil', icon: 'account-circle-outline' },
 ];
 
 export function AppNavigation({ active, onChange, isTablet, session, onLogout }: { active: ScreenName; onChange: (screen: ScreenName) => void; isTablet: boolean; session: Session; onLogout: () => void }) {
   const items = session.role === 'pusat' ? adminItems : partnerItems;
-  if (!isTablet) return <View style={styles.bottom}>{items.map((item) => <Pressable key={item.id} onPress={() => onChange(item.id)} style={styles.bottomItem}><Text style={[styles.bottomIcon, active === item.id && styles.activeText]}>{item.icon}</Text><Text style={[styles.bottomLabel, active === item.id && styles.activeText]}>{item.label}</Text></Pressable>)}</View>;
-  return <View style={styles.sidebar}><View style={styles.logo}><Text style={styles.logoText}>P</Text></View><View style={styles.partner}><Text style={styles.partnerName}>{session.partnerName}</Text><Text style={styles.role}>{session.role === 'pusat' ? 'Admin pusat' : 'Mitra aktif'}</Text></View><View style={styles.menu}>{items.map((item) => <Pressable key={item.id} onPress={() => onChange(item.id)} style={[styles.menuItem, active === item.id && styles.activeMenu]}><Text style={[styles.menuIcon, active === item.id && styles.activeMenuText]}>{item.icon}</Text><Text style={[styles.menuLabel, active === item.id && styles.activeMenuText]}>{item.label}</Text></Pressable>)}</View></View>;
+  if (!isTablet) return <View style={styles.bottom}>{items.map((item) => <Pressable key={item.id} onPress={() => onChange(item.id)} style={styles.bottomItem}><MaterialCommunityIcons name={item.icon} size={21} color={active === item.id ? colors.primary : colors.muted} /><Text style={[styles.bottomLabel, active === item.id && styles.activeText]}>{item.label}</Text></Pressable>)}</View>;
+  return <View style={styles.sidebar}><View style={styles.logo}><MaterialCommunityIcons name="point-of-sale" size={23} color={colors.primary} /></View><View style={styles.partner}><Text style={styles.partnerName}>{session.partnerName}</Text><Text style={styles.role}>{session.role === 'pusat' ? 'Admin pusat' : 'Mitra aktif'}</Text></View><View style={styles.menu}>{items.map((item) => <Pressable key={item.id} onPress={() => onChange(item.id)} style={[styles.menuItem, active === item.id && styles.activeMenu]}><MaterialCommunityIcons name={item.icon} size={21} color={active === item.id ? '#FFFFFF' : '#FFE0C9'} /><Text style={[styles.menuLabel, active === item.id && styles.activeMenuText]}>{item.label}</Text></Pressable>)}</View></View>;
 }
 
 const styles = StyleSheet.create({

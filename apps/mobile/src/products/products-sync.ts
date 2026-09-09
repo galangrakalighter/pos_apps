@@ -2,6 +2,7 @@ import NetInfo from '@react-native-community/netinfo';
 import { API_URL } from '../config';
 import { getDatabase } from '../database/db';
 import { Product, Session } from '../types';
+import { syncHistory } from '../sync/history-sync';
 
 type ServerRecipe = { ingredientProductId: string | null; quantityRequired: number };
 type ServerProduct = { id: string; name: string; stock: number; price: string; category: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string | null; recipeComplete: boolean; recipes?: ServerRecipe[]; imageUrl: string | null; updatedAt: string };
@@ -54,6 +55,17 @@ export async function ensureLocalPartnerProducts(session: Session): Promise<void
     session.mitraId,
   );
   if ((local?.total ?? 0) > 0) return;
+  await syncPartnerProducts(session);
+}
+
+export async function refreshPartnerProducts(session: Session): Promise<void> {
+  const network = await NetInfo.fetch();
+  if (!network.isConnected || network.isInternetReachable === false) {
+    throw new Error('Refresh stok memerlukan koneksi internet.');
+  }
+  // Kirim penjualan lokal dahulu agar snapshot server yang ditarik sesudahnya
+  // tidak mengembalikan stok ke nilai sebelum transaksi offline.
+  await syncHistory({ userId: session.id, accessToken: session.accessToken });
   await syncPartnerProducts(session);
 }
 

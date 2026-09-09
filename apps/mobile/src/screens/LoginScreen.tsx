@@ -3,6 +3,7 @@ import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text
 import { colors, shadow } from '../theme';
 import { Session } from '../types';
 import { loginOnline } from '../auth/auth-api';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Props { onLogin: (session: Session) => void; }
 
@@ -11,6 +12,7 @@ export function LoginScreen({ onLogin }: Props) {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const submit = async () => {
     if (!username.trim() || !password || loading) return;
     setError(''); setLoading(true);
@@ -28,7 +30,7 @@ export function LoginScreen({ onLogin }: Props) {
         <Text style={styles.label}>Username</Text>
         <TextInput autoCapitalize="none" value={username} onChangeText={setUsername} placeholder="Masukkan username" placeholderTextColor="#98A2B3" style={styles.input} />
         <Text style={styles.label}>Password</Text>
-        <TextInput value={password} onChangeText={setPassword} placeholder="Masukkan password" placeholderTextColor="#98A2B3" secureTextEntry style={styles.input} />
+        <View style={styles.passwordField}><TextInput value={password} onChangeText={setPassword} placeholder="Masukkan password" placeholderTextColor="#98A2B3" secureTextEntry={!showPassword} style={styles.passwordInput} /><Pressable accessibilityRole="button" accessibilityLabel={showPassword ? 'Sembunyikan password' : 'Tampilkan password'} onPress={() => setShowPassword((value) => !value)} style={styles.eyeButton}><Ionicons name={showPassword ? 'eye-off-outline' : 'eye-outline'} size={21} color={colors.muted} /></Pressable></View>
         {!!error && <Text style={styles.error}>{error}</Text>}
         <Pressable disabled={loading} onPress={() => void submit()} style={({ pressed }) => [styles.button, pressed && { opacity: 0.85 }, loading && { opacity: 0.55 }]}><Text style={styles.buttonText}>{loading ? 'Memverifikasi...' : 'Masuk ke aplikasi'}</Text></Pressable>
         <Text style={styles.hint}>Login pertama wajib online. Setelah berhasil, sesi dapat digunakan tanpa internet sampai Anda logout.</Text>
@@ -51,6 +53,9 @@ const styles = StyleSheet.create({
   subtitle: { color: colors.muted, marginTop: 5, marginBottom: 20 },
   label: { color: colors.ink, fontWeight: '700', fontSize: 13, marginBottom: 7, marginTop: 10 },
   input: { borderWidth: 1, borderColor: colors.line, borderRadius: 12, paddingHorizontal: 14, height: 48, color: colors.ink, backgroundColor: '#FAFAFA' },
+  passwordField: { height: 48, flexDirection: 'row', alignItems: 'center', borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: '#FAFAFA' },
+  passwordInput: { flex: 1, height: '100%', paddingLeft: 14, paddingRight: 6, color: colors.ink },
+  eyeButton: { width: 48, height: 48, alignItems: 'center', justifyContent: 'center' },
   button: { backgroundColor: colors.primary, padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 22 },
   buttonText: { color: '#FFFFFF', fontWeight: '800', fontSize: 15 },
   hint: { color: colors.muted, fontSize: 10, lineHeight: 15, textAlign: 'center', marginTop: 13 },
