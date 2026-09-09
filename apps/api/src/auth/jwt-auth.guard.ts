@@ -13,9 +13,9 @@ export class JwtAuthGuard implements CanActivate {
     if (scheme !== 'Bearer' || !token) throw new UnauthorizedException('Bearer token required');
     try {
       const payload = await this.jwt.verifyAsync<AccessTokenPayload>(token);
-      const rows: Array<{ id: string; username: string; partnerName: string; isPusat: boolean; isLocked: boolean }> =
+      const rows: Array<{ id: string; username: string; partnerName: string; isPusat: boolean; isLocked: boolean; profileImageUrl: string | null }> =
         await this.dataSource.query(
-          `SELECT id::text, username, nama_mitra AS "partnerName", "isPusat" AS "isPusat", is_locked AS "isLocked"
+          `SELECT id::text, username, nama_mitra AS "partnerName", "isPusat" AS "isPusat", is_locked AS "isLocked", profile_image_url AS "profileImageUrl"
              FROM users WHERE id = $1::uuid`,
           [payload.sub],
         );

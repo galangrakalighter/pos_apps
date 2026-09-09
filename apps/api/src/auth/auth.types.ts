@@ -5,6 +5,7 @@ export interface AuthenticatedUser {
   partnerName: string;
   isPusat: boolean;
   centralSupplierId: string | null;
+  profileImageUrl: string | null;
 }
 
 export interface AccessTokenPayload {

@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -40,4 +41,16 @@ export class AccountsController {
   updateProfile(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateOwnProfileDto) {
     return this.service.updateOwnProfile(user, dto);
   }
+
+  @Post('profile/image')
+  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  profileImage(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file?: { buffer: Buffer; mimetype: string; originalname: string }) {
+    return this.service.saveProfileImage(user, file);
+  }
+}
+
+@Controller('profile/images')
+export class ProfileImagesController {
+  constructor(private readonly service: AccountsService) {}
+  @Get(':filename') image(@Param('filename') filename: string) { return this.service.profileImage(filename); }
 }

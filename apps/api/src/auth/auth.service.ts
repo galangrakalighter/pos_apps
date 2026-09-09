@@ -10,9 +10,9 @@ export class AuthService {
   constructor(private readonly dataSource: DataSource, private readonly jwt: JwtService) {}
 
   async login(dto: LoginDto): Promise<{ accessToken: string; user: AuthenticatedUser }> {
-    const rows: Array<{ id: string; username: string; password: string; partnerName: string; isPusat: boolean; isLocked: boolean }> =
+    const rows: Array<{ id: string; username: string; password: string; partnerName: string; isPusat: boolean; isLocked: boolean; profileImageUrl: string | null }> =
       await this.dataSource.query(
-        `SELECT id::text, username, password, nama_mitra AS "partnerName", "isPusat" AS "isPusat", is_locked AS "isLocked"
+        `SELECT id::text, username, password, nama_mitra AS "partnerName", "isPusat" AS "isPusat", is_locked AS "isLocked", profile_image_url AS "profileImageUrl"
            FROM users WHERE username = $1 LIMIT 1`,
         [dto.username],
       );
@@ -31,7 +31,7 @@ export class AuthService {
     const central: Array<{ id: string }> = await this.dataSource.query(
       `SELECT id::text FROM users WHERE "isPusat" = TRUE ORDER BY created_at LIMIT 1`,
     );
-    const user: AuthenticatedUser = { id: row.id, mitraId: row.id, username: row.username, partnerName: row.partnerName, isPusat: row.isPusat, centralSupplierId: central[0]?.id ?? null };
+    const user: AuthenticatedUser = { id: row.id, mitraId: row.id, username: row.username, partnerName: row.partnerName, isPusat: row.isPusat, centralSupplierId: central[0]?.id ?? null, profileImageUrl: row.profileImageUrl };
     const payload: AccessTokenPayload = { sub: user.id, username: user.username, isPusat: user.isPusat };
     // Intentionally no expiresIn: session ends only through explicit local logout.
     return { accessToken: await this.jwt.signAsync(payload), user };

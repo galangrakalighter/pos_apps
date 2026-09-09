@@ -26,6 +26,7 @@ export interface Session {
   role: UserRole;
   accessToken: string;
   centralSupplierId: string | null;
+  profileImageUrl?: string | null;
 }
 
 export interface SaleHistory {

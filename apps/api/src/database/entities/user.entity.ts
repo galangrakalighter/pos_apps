@@ -9,4 +9,5 @@ export class User {
   @Column({ name: 'nama_mitra' }) namaMitra!: string;
   @Column({ name: 'isPusat' }) isPusat!: boolean;
   @Column({ name: 'is_locked' }) isLocked!: boolean;
+  @Column({ name: 'profile_image_url', type: 'text', nullable: true }) profileImageUrl!: string | null;
 }

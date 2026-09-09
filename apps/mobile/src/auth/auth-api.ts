@@ -5,7 +5,7 @@ import { Session } from '../types';
 
 interface LoginResponse {
   accessToken: string;
-  user: { id: string; mitraId: string; username: string; partnerName: string; isPusat: boolean; centralSupplierId: string | null };
+  user: { id: string; mitraId: string; username: string; partnerName: string; isPusat: boolean; centralSupplierId: string | null; profileImageUrl?: string | null };
 }
 
 export async function loginOnline(username: string, password: string): Promise<Session> {
@@ -25,7 +25,7 @@ export async function loginOnline(username: string, password: string): Promise<S
   const session: Session = {
     id: payload.user.id, mitraId: payload.user.mitraId, name: payload.user.username,
     partnerName: payload.user.partnerName, role: payload.user.isPusat ? 'pusat' : 'mitra',
-    accessToken: payload.accessToken, centralSupplierId: payload.user.centralSupplierId,
+    accessToken: payload.accessToken, centralSupplierId: payload.user.centralSupplierId, profileImageUrl: payload.user.profileImageUrl ?? null,
   };
   await saveSession(session);
   return session;

@@ -1,13 +1,16 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, StreamableFile, UnauthorizedException } from '@nestjs/common';
 import { compare, hash } from 'bcryptjs';
 import { DataSource } from 'typeorm';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { randomUUID } from 'node:crypto';
 import { AuthenticatedUser } from '../auth/auth.types';
 import { OnboardPartnerDto } from './dto/onboard-partner.dto';
 import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { AdminUpdatePartnerDto } from './dto/admin-update-partner.dto';
 
 export interface UserProfileRow {
-  id: string; username: string; password?: string; partnerName: string; region: string | null; isPusat: boolean;
+  id: string; username: string; password?: string; partnerName: string; region: string | null; isPusat: boolean; profileImageUrl?: string | null;
 }
 
 @Injectable()
@@ -91,7 +94,7 @@ export class AccountsService {
 
   async getOwnProfile(user: AuthenticatedUser) {
     const rows: UserProfileRow[] = await this.dataSource.query(
-      `SELECT id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"
+      `SELECT id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat", profile_image_url AS "profileImageUrl"
          FROM users WHERE id = $1::uuid`, [user.id],
     );
     return rows[0];
@@ -184,7 +187,7 @@ export class AccountsService {
         const updated: UserProfileRow[] = await manager.query(
           `UPDATE users SET username = $1, nama_mitra = $2, wilayah = $3, password = $4
             WHERE id = $5::uuid
-            RETURNING id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"`,
+            RETURNING id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName", wilayah AS region, "isPusat" AS "isPusat", profile_image_url AS "profileImageUrl"`,
           [dto.username ?? current.username, dto.partnerName ?? current.partnerName, dto.region ?? current.region, passwordHash, user.id],
         );
         return updated[0];
@@ -193,6 +196,35 @@ export class AccountsService {
         throw error;
       }
     });
+  }
+
+  async saveProfileImage(user: AuthenticatedUser, file?: { buffer: Buffer; mimetype: string; originalname: string }) {
+    if (!file) throw new BadRequestException('Pilih gambar profil terlebih dahulu');
+    const extensions: Record<string, string> = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const extension = extensions[file.mimetype];
+    if (!extension) throw new BadRequestException('Format foto harus JPG, PNG, atau WebP');
+    const filename = `${user.id}-${randomUUID()}.${extension}`;
+    const directory = join(process.cwd(), 'uploads', 'profiles');
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, filename), file.buffer);
+    const imageUrl = `/api/v1/profile/images/${filename}`;
+    const rows: UserProfileRow[] = await this.dataSource.query(
+      `UPDATE users SET profile_image_url = $1 WHERE id = $2::uuid
+       RETURNING id::text, username, COALESCE(NULLIF(nama_mitra, ''), username) AS "partnerName",
+                 wilayah AS region, "isPusat" AS "isPusat", profile_image_url AS "profileImageUrl"`,
+      [imageUrl, user.id],
+    );
+    if (!rows[0]) throw new UnauthorizedException('User tidak ditemukan');
+    return rows[0];
+  }
+
+  async profileImage(filename: string) {
+    if (!/^[a-f0-9-]+\.(jpg|png|webp)$/i.test(filename)) throw new NotFoundException('Foto profil tidak ditemukan');
+    try {
+      const data = await readFile(join(process.cwd(), 'uploads', 'profiles', filename));
+      const type = filename.endsWith('.png') ? 'image/png' : filename.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      return new StreamableFile(data, { type });
+    } catch { throw new NotFoundException('Foto profil tidak ditemukan'); }
   }
 
   private isUniqueViolation(error: unknown): error is { code: string } {

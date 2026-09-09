@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { colors, shadow } from '../theme';
 import { Session } from '../types';
 import { loginOnline } from '../auth/auth-api';
@@ -24,7 +24,7 @@ export function LoginScreen({ onLogin }: Props) {
   return (
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={Platform.OS === 'ios' ? 12 : 0} style={styles.screen}>
       <ScrollView contentContainerStyle={styles.scrollContent} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-      <View style={styles.brand}><View style={styles.logo}><Text style={styles.logoText}>P</Text></View><Text style={styles.brandName}>POS Mitra</Text><Text style={styles.tagline}>Jual cepat. Tetap jalan saat offline.</Text></View>
+      <View style={styles.brand}><Image source={require('../../assets/login-logo.jpg')} resizeMode="cover" style={styles.logoImage} /><Text style={styles.brandName}>POS Mitra</Text><Text style={styles.tagline}>Jual cepat. Tetap jalan saat offline.</Text></View>
       <View style={styles.card}>
         <Text style={styles.title}>Selamat datang</Text><Text style={styles.subtitle}>Masuk menggunakan akun mitra atau pusat.</Text>
         <Text style={styles.label}>Username</Text>
@@ -44,8 +44,7 @@ const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.primary },
   scrollContent: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', padding: 24, paddingVertical: 36 },
   brand: { alignItems: 'center', marginBottom: 28 },
-  logo: { width: 58, height: 58, borderRadius: 18, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
-  logoText: { color: colors.primary, fontSize: 28, fontWeight: '900' },
+  logoImage: { width: 220, height: 105, borderRadius: 20, backgroundColor: colors.primary },
   brandName: { color: '#FFFFFF', fontSize: 28, fontWeight: '900', marginTop: 12 },
   tagline: { color: '#FFF0E5', fontSize: 13, marginTop: 4 },
   card: { width: '100%', maxWidth: 420, backgroundColor: colors.surface, padding: 24, borderRadius: 22, ...shadow },

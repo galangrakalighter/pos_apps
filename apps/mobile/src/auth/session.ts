@@ -24,6 +24,7 @@ export async function loadSession(): Promise<Session | null> {
       role: stored.role,
       accessToken: stored.accessToken,
       centralSupplierId: stored.centralSupplierId ?? null,
+      profileImageUrl: stored.profileImageUrl ?? null,
     };
   } catch { await clearSession(); return null; }
 }

@@ -3,8 +3,12 @@ import { saveSession } from '../auth/session';
 import { Session } from '../types';
 
 export interface UserProfile {
-  id: string; username: string; partnerName: string; region: string | null; isPusat: boolean;
+  id: string; username: string; partnerName: string; region: string | null; isPusat: boolean; profileImageUrl?: string | null;
 }
+
+export const profileImageUri = (path?: string | null) => path
+  ? (path.startsWith('http://') || path.startsWith('https://') ? path : `${API_URL.replace(/\/api\/v1\/?$/, '')}${path}`)
+  : null;
 
 async function request<T>(path: string, session: Session, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
@@ -30,7 +34,26 @@ export async function updateOwnProfile(
   const profile = await request<UserProfile>('/profile', session, { method: 'PATCH', body: JSON.stringify(changes) });
   const username = profile.username?.trim() || session.name || 'akun';
   const partnerName = profile.partnerName?.trim() || username;
-  const updatedSession = { ...session, name: username, partnerName };
+  const updatedSession = { ...session, name: username, partnerName, profileImageUrl: profile.profileImageUrl ?? session.profileImageUrl ?? null };
+  await saveSession(updatedSession);
+  return { profile, session: updatedSession };
+}
+
+export async function uploadOwnProfileImage(session: Session, asset: { uri: string; mimeType?: string | null; fileName?: string | null }) {
+  if (!asset.uri) throw new Error('File foto profil tidak valid');
+  const form = new FormData();
+  const extension = asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg';
+  form.append('image', { uri: asset.uri, name: asset.fileName?.trim() || `profil.${extension}`, type: asset.mimeType || 'image/jpeg' } as unknown as Blob);
+  const response = await fetch(`${API_URL}/profile/image`, {
+    method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` }, body: form,
+  });
+  const profile = await response.json().catch(() => null) as UserProfile | { message?: string | string[] } | null;
+  if (!response.ok) {
+    const detail = profile && 'message' in profile ? profile.message : undefined;
+    throw new Error(Array.isArray(detail) ? detail[0] : detail ?? `Upload foto gagal (${response.status})`);
+  }
+  if (!profile || !('id' in profile)) throw new Error('Respons foto profil tidak valid');
+  const updatedSession = { ...session, profileImageUrl: profile.profileImageUrl ?? null };
   await saveSession(updatedSession);
   return { profile, session: updatedSession };
 }
