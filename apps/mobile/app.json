@@ -35,6 +35,17 @@
           "legacyVisible": "sticky-immersive"
         }
       ]
-    ]
+    ],
+    "extra": {
+      "expo-navigation-bar": {
+        "visibility": "hidden",
+        "behavior": "overlay-swipe",
+        "position": "relative",
+        "legacyVisible": "sticky-immersive"
+      },
+      "eas": {
+        "projectId": "7ad64eca-acc7-4385-8389-59a24d8580ab"
+      }
+    }
   }
 }

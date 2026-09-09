@@ -14,6 +14,7 @@ import { AdminInventoryModule } from './admin-inventory/admin-inventory.module';
 import { HistorySyncModule } from './history-sync/history-sync.module';
 import { OrdersModule } from './orders/orders.module';
 import { HealthController } from './health.controller';
+import { PartnerSyncModule } from './partner-sync/partner-sync.module';
 
 @Module({
   controllers: [HealthController],
@@ -40,6 +41,7 @@ import { HealthController } from './health.controller';
     AuthModule,
     AccountsModule,
     AdminInventoryModule,
+    PartnerSyncModule,
   ],
 })
 export class AppModule {}

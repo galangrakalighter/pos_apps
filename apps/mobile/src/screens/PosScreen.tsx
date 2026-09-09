@@ -4,7 +4,7 @@ import { CartPanel } from '../components/CartPanel';
 import { ProductCard } from '../components/ProductCard';
 import { PaymentMethod, recordTransaction } from '../database/sales.repository';
 import { rupiah } from '../data/mock';
-import { getLocalProducts, syncPartnerProducts } from '../products/products-sync';
+import { ensureLocalPartnerProducts, getLocalProducts } from '../products/products-sync';
 import { colors } from '../theme';
 import { CartItem, Product, Session } from '../types';
 
@@ -20,8 +20,7 @@ export function PosScreen({ isTablet, session, onTransactionSaved }: { isTablet:
   useEffect(() => {
     setCart([]);
     const load = async () => {
-      setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
-      await syncPartnerProducts(session).catch(() => undefined);
+      await ensureLocalPartnerProducts(session).catch(() => undefined);
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
     };
     void load();

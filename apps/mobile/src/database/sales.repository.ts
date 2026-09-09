@@ -76,6 +76,7 @@ export async function recordTransaction(
 
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const pricedItems: Array<{ productId: number; quantity: number; priceCents: number }> = [];
+    const ingredientRequirements = new Map<number, number>();
     for (const item of items) {
       const product = await transaction.getFirstAsync<{ price_cents: number; stock: number }>(
         `SELECT price_cents, stock FROM local_products
@@ -84,6 +85,17 @@ export async function recordTransaction(
       );
       if (!product) throw new Error('Produk tidak ditemukan');
       if (product.stock < item.quantity) throw new Error('Stok produk tidak mencukupi');
+      const recipes = await transaction.getAllAsync<{ ingredient_product_id: number; quantity_required: number }>(
+        `SELECT ingredient_product_id, quantity_required
+           FROM local_product_recipes
+          WHERE owner_id = ? AND finished_product_id = ?`,
+        ownerId, item.productId,
+      );
+      if (!recipes.length) throw new Error('Resep produk belum tersimpan. Minta Pusat melakukan sinkronisasi Mitra ini.');
+      for (const recipe of recipes) {
+        const required = Number(recipe.quantity_required) * item.quantity;
+        ingredientRequirements.set(recipe.ingredient_product_id, (ingredientRequirements.get(recipe.ingredient_product_id) ?? 0) + required);
+      }
       totalCents += product.price_cents * item.quantity;
       pricedItems.push({ ...item, priceCents: product.price_cents });
     }
@@ -91,13 +103,43 @@ export async function recordTransaction(
     const amountPaidCents = payment.method === 'tunai' ? payment.amountPaidCents : totalCents;
     const changeCents = payment.method === 'tunai' ? amountPaidCents - totalCents : 0;
 
-    for (const item of pricedItems) {
+    for (const [ingredientId, required] of ingredientRequirements) {
       const changed = await transaction.runAsync(
         `UPDATE local_products SET stock = stock - ?
-          WHERE server_id = ? AND owner_id = ? AND is_active = 1 AND stock >= ?`,
-        item.quantity, item.productId, ownerId, item.quantity,
+          WHERE server_id = ? AND owner_id = ? AND is_active = 1
+            AND product_kind = 'bahan_baku' AND stock + 0.000001 >= ?`,
+        required, ingredientId, ownerId, required,
       );
-      if (changed.changes !== 1) throw new Error('Stok produk berubah. Periksa keranjang kembali.');
+      if (changed.changes !== 1) throw new Error('Bahan baku tidak mencukupi untuk transaksi ini.');
+    }
+
+    // Stok produk jadi merupakan kapasitas yang dihitung dari bahan baku. Setelah
+    // bahan dipotong, hitung ulang semua produk agar kasir langsung melihat stok lokal terbaru.
+    const finishedProducts = await transaction.getAllAsync<{ server_id: number }>(
+      `SELECT server_id FROM local_products
+        WHERE owner_id = ? AND is_active = 1 AND product_kind = 'produk_jadi'`,
+      ownerId,
+    );
+    for (const finished of finishedProducts) {
+      const capacities = await transaction.getAllAsync<{ stock: number; quantity_required: number }>(
+        `SELECT raw.stock, recipe.quantity_required
+           FROM local_product_recipes recipe
+           LEFT JOIN local_products raw
+             ON raw.server_id = recipe.ingredient_product_id
+            AND raw.owner_id = recipe.owner_id AND raw.is_active = 1
+          WHERE recipe.owner_id = ? AND recipe.finished_product_id = ?`,
+        ownerId, finished.server_id,
+      );
+      const capacity = capacities.length
+        ? Math.max(0, Math.floor(Math.min(...capacities.map((row) => Number(row.stock ?? 0) / Number(row.quantity_required)))))
+        : 0;
+      await transaction.runAsync(
+        `UPDATE local_products SET stock = ?, updated_at = ? WHERE server_id = ? AND owner_id = ?`,
+        capacity, createdAt, finished.server_id, ownerId,
+      );
+    }
+
+    for (const item of pricedItems) {
       await transaction.runAsync(
         `INSERT INTO local_history
           (uuid, product_id, sold_quantity, price_cents, created_at, note, sync_status, owner_id,

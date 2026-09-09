@@ -101,4 +101,18 @@ export async function initializeDatabase(): Promise<void> {
     await db.execAsync(`CREATE INDEX IF NOT EXISTS idx_local_history_transaction ON local_history(owner_id, transaction_uuid)`);
     await db.execAsync('PRAGMA user_version = 8');
   }
+  if ((version?.user_version ?? 0) < 9) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_product_recipes (
+        owner_id TEXT NOT NULL,
+        finished_product_id INTEGER NOT NULL,
+        ingredient_product_id INTEGER NOT NULL,
+        quantity_required REAL NOT NULL CHECK (quantity_required > 0),
+        PRIMARY KEY (owner_id, finished_product_id, ingredient_product_id)
+      );
+      CREATE INDEX IF NOT EXISTS idx_local_recipes_ingredient
+        ON local_product_recipes(owner_id, ingredient_product_id);
+      PRAGMA user_version = 9;
+    `);
+  }
 }

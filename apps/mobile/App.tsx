@@ -10,7 +10,7 @@ import { MitraManagementScreen } from './src/screens/MitraManagementScreen';
 import { initializeDatabase } from './src/database/db';
 import { countPendingSales } from './src/database/sales.repository';
 import { clearSession, loadSession } from './src/auth/session';
-import { startHistorySync, syncHistory } from './src/sync/history-sync';
+import { startTargetedSync } from './src/sync/targeted-sync';
 import { HistoryScreen } from './src/screens/HistoryScreen';
 import { InventoryScreen } from './src/screens/InventoryScreen';
 import { LoginScreen } from './src/screens/LoginScreen';
@@ -21,8 +21,6 @@ import { WarehouseManagementScreen } from './src/screens/WarehouseManagementScre
 import { colors } from './src/theme';
 import { ScreenName, Session } from './src/types';
 import { useImmersiveNavigation } from './src/system/useImmersiveNavigation';
-import { syncPartnerProducts } from './src/products/products-sync';
-import NetInfo from '@react-native-community/netinfo';
 
 const titles: Record<ScreenName, string> = { pos: 'Kasir', history: 'Riwayat bisnis', inventory: 'Produk & stok', orders: 'Procurement', profile: 'Profil akun', adminSales: 'Monitoring penjualan', adminOrders: 'Fulfillment pesanan', adminAccounts: 'Manajemen akun mitra' };
 
@@ -47,18 +45,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!session || session.role === 'pusat') return;
-    return startHistorySync(
-      { userId: session.id, accessToken: session.accessToken },
-      () => { void countPendingSales(session.mitraId).then(setPendingSync); },
-    );
-  }, [session]);
-  useEffect(() => {
-    if (!session || session.role === 'pusat') return;
-    const syncProducts = () => { void syncPartnerProducts(session).catch(() => undefined); };
-    syncProducts();
-    return NetInfo.addEventListener((state) => {
-      if (state.isConnected && state.isInternetReachable !== false) syncProducts();
-    });
+    return startTargetedSync(session, () => { void countPendingSales(session.mitraId).then(setPendingSync); });
   }, [session]);
   if (!ready) return <View style={styles.loading}><ActivityIndicator color={colors.primary} size="large" /></View>;
   const handleLogin = (nextSession: Session) => {
@@ -69,11 +56,6 @@ export default function App() {
   const refreshPending = () => { if (session.role === 'mitra') void countPendingSales(session.mitraId).then(setPendingSync); };
   const transactionSaved = () => {
     refreshPending();
-    if (session.role === 'mitra') {
-      void syncHistory({ userId: session.id, accessToken: session.accessToken })
-        .then(refreshPending)
-        .catch(() => undefined);
-    }
   };
   const logout = () => { void clearSession().then(() => { setSession(null); setScreen('pos'); }); };
   const content = screen === 'pos' ? <PosScreen isTablet={isTablet} session={session} onTransactionSaved={transactionSaved} /> : screen === 'history' ? <HistoryScreen session={session} /> : screen === 'inventory' ? (session.role === 'pusat' ? <WarehouseManagementScreen session={session} /> : <InventoryScreen session={session} />) : screen === 'orders' ? <OrderScreen isTablet={isTablet} session={session} /> : screen === 'profile' ? <ProfileScreen session={session} onSessionUpdated={setSession} onLogout={logout} /> : screen === 'adminSales' ? <OverviewSalesMonitoringScreen isTablet={isTablet} session={session} /> : screen === 'adminOrders' ? <AdminOrderManagementScreen session={session} /> : <MitraManagementScreen session={session} />;

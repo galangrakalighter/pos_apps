@@ -7,11 +7,13 @@ import { PartnerStockMonitoring } from '../components/PartnerStockMonitoring';
 import { colors } from '../theme';
 import { Session } from '../types';
 import { AdminPartnerAccountsScreen } from './AdminPartnerAccountsScreen';
+import { getPartnerSyncStatus, requestPartnerSync } from '../sync/targeted-sync';
 
 export function MitraManagementScreen({ session }: { session: Session }) {
   const [adding, setAdding] = useState(false); const [editing, setEditing] = useState<PartnerStockSummary | null>(null);
   const [username, setUsername] = useState(''); const [password, setPassword] = useState('');
   const [saving, setSaving] = useState(false); const [refreshKey, setRefreshKey] = useState(0);
+  const [syncingId, setSyncingId] = useState<string | null>(null);
   const refreshed = () => setRefreshKey((value) => value + 1);
   const beginEdit = (partner: PartnerStockSummary) => { setEditing(partner); setUsername(partner.username); setPassword(''); };
   const closeEdit = () => { setEditing(null); setUsername(''); setPassword(''); };
@@ -29,9 +31,23 @@ export function MitraManagementScreen({ session }: { session: Session }) {
     const locked = !partner.isLocked;
     Alert.alert(locked ? 'Lock akun Mitra?' : 'Aktifkan kembali akun?', locked ? `Akun ${partner.username} tidak dapat menggunakan API dan dapat dihapus bersama seluruh datanya.` : `Akun ${partner.username} akan dapat digunakan kembali dan penghapusan paksa dinonaktifkan.`, [{ text: 'Batal', style: 'cancel' }, { text: locked ? 'Lock akun' : 'Unlock akun', style: locked ? 'destructive' : 'default', onPress: async () => { try { await adminSetPartnerLock(session, partner.id, locked); refreshed(); } catch (error) { Alert.alert('Status gagal diubah', error instanceof Error ? error.message : 'Terjadi kesalahan'); } } }]);
   };
+  const syncPartner = async (partner: PartnerStockSummary) => {
+    setSyncingId(partner.id);
+    try {
+      const request = await requestPartnerSync(session, partner.id);
+      for (let attempt = 0; attempt < 20; attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1500));
+        const status = await getPartnerSyncStatus(session, request.id);
+        if (status.status === 'completed') { refreshed(); Alert.alert('Sinkronisasi selesai', `Data ${partner.username} berhasil disinkronkan.`); return; }
+        if (status.status === 'failed') { Alert.alert('Sinkronisasi Mitra gagal', status.error || 'Perangkat Mitra gagal memproses sinkronisasi.'); return; }
+      }
+      Alert.alert('Sinkronisasi menunggu perangkat', `${partner.username} sedang offline atau aplikasinya tidak aktif. Permintaan tetap tersimpan dan akan diproses ketika perangkat kembali online.`);
+    } catch (error) { Alert.alert('Sinkronisasi gagal diminta', error instanceof Error ? error.message : 'Terjadi kesalahan'); }
+    finally { setSyncingId(null); }
+  };
   return <View style={styles.screen}>
     <View style={styles.header}><View><Text style={styles.title}>Seluruh Mitra</Text><Text style={styles.subtitle}>Kelola akun dan sisa stok toko.</Text></View><Pressable onPress={() => setAdding(true)} style={styles.addButton}><Text style={styles.addText}>＋ Tambah Mitra</Text></Pressable></View>
-    <View style={styles.list}><PartnerStockMonitoring session={session} refreshKey={refreshKey} onEdit={beginEdit} onDelete={askDelete} onToggleLock={toggleLock} /></View>
+    <View style={styles.list}><PartnerStockMonitoring session={session} refreshKey={refreshKey} onEdit={beginEdit} onDelete={askDelete} onToggleLock={toggleLock} onSync={syncPartner} syncingId={syncingId} /></View>
     <Modal visible={adding} animationType="slide" onRequestClose={() => setAdding(false)}><SafeAreaView style={styles.modalScreen}><ModalHeader title="Tambah Mitra & Stok Awal" onClose={() => setAdding(false)} /><AdminPartnerAccountsScreen session={session} onCreated={() => { setAdding(false); refreshed(); }} /></SafeAreaView></Modal>
     <Modal visible={Boolean(editing)} transparent animationType="fade" onRequestClose={closeEdit}><View style={styles.backdrop}><View style={styles.editModal}><Text style={styles.editTitle}>Edit akun Mitra</Text><Text style={styles.label}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" style={styles.input} /><Text style={styles.label}>Password baru</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Kosongkan jika tidak diubah" placeholderTextColor="#98A2B3" style={styles.input} /><Text style={styles.hint}>Data lain, termasuk stok dan nama Mitra, tidak ikut berubah.</Text><View style={styles.actions}><Pressable onPress={closeEdit} style={styles.cancel}><Text style={styles.cancelText}>Batal</Text></Pressable><Pressable disabled={saving} onPress={() => void saveEdit()} style={[styles.save, saving && { opacity: .5 }]}><Text style={styles.saveText}>{saving ? 'Menyimpan...' : 'Simpan'}</Text></Pressable></View></View></View></Modal>
   </View>;

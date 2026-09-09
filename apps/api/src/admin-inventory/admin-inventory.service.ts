@@ -85,6 +85,18 @@ export class AdminInventoryService {
                   LEFT JOIN produk_mitra rawx ON rawx.mitra_id = p.mitra_id AND rawx.master_produk_id = rx.ingredient_id AND rawx.jenis_produk = 'bahan_baku'
                   WHERE rx.finished_product_id = p.master_produk_id AND rawx.id IS NULL
                 ) ELSE TRUE END AS "recipeComplete",
+              CASE WHEN p.jenis_produk = 'produk_jadi' THEN COALESCE((
+                SELECT json_agg(json_build_object(
+                  'ingredientProductId', raw_recipe.id::text,
+                  'quantityRequired', convert_inventory_unit(rx.quantity_required, rx.satuan, ingredient.satuan)::float8
+                ) ORDER BY rx.ingredient_id)
+                  FROM product_recipes rx
+                  JOIN warehouse ingredient ON ingredient.id = rx.ingredient_id
+                  LEFT JOIN produk_mitra raw_recipe ON raw_recipe.mitra_id = p.mitra_id
+                    AND raw_recipe.master_produk_id = rx.ingredient_id
+                    AND raw_recipe.jenis_produk = 'bahan_baku'
+                 WHERE rx.finished_product_id = p.master_produk_id
+              ), '[]'::json) ELSE '[]'::json END AS recipes,
               p.updated_at AS "updatedAt"
          FROM produk_mitra p
          LEFT JOIN warehouse master ON master.id = p.master_produk_id

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Alert, FlatList, Image, Modal, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { rupiah } from '../data/mock';
-import { getLocalProducts, syncPartnerProducts, updatePartnerProductPrice } from '../products/products-sync';
+import { ensureLocalPartnerProducts, getLocalProducts, updatePartnerProductPrice } from '../products/products-sync';
 import { colors } from '../theme';
 import { Product, Session } from '../types';
 
@@ -14,7 +14,10 @@ export function InventoryScreen({ session }: { session: Session }) {
   const [stock, setStock] = useState('');
   const [price, setPrice] = useState('');
   const [saving, setSaving] = useState(false);
-  const load = async () => { setItems(await getLocalProducts(session.mitraId)); await syncPartnerProducts(session).catch(() => undefined); setItems(await getLocalProducts(session.mitraId)); };
+  const load = async () => {
+    await ensureLocalPartnerProducts(session).catch(() => undefined);
+    setItems(await getLocalProducts(session.mitraId));
+  };
   useEffect(() => { setEditing(null); void load(); }, [session.accessToken, session.mitraId]);
   const visible = useMemo(() => items.filter((item) => item.kind === tab), [items, tab]);
   const openEdit = (item: Product) => { if (item.kind !== 'produk_jadi') return; setEditing(item); setStock(String(item.stock)); setPrice(item.price > 0 ? String(item.price) : ''); };
