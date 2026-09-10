@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsNumber, IsNumberString, IsString, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsNumber, IsNumberString, IsString, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { RecipeItemDto } from './create-warehouse-product.dto';
 
 export class UpdateWarehouseProductDto {
@@ -11,6 +11,9 @@ export class UpdateWarehouseProductDto {
 
   @IsNumber({ maxDecimalPlaces: 3 }) @Min(0)
   stock!: number;
+
+  @IsBoolean()
+  isAvailable!: boolean;
 
   @IsNumberString()
   price!: string;

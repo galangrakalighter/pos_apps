@@ -13,7 +13,6 @@ import { CentralPaymentSettings, getCentralPayment, profileImageUri } from '../a
 
 type Tab = 'catalog' | 'status';
 const statusColors = { pending: colors.orange, diterima: colors.blue, dikirim: '#7A5AF8', selesai: colors.green };
-const unitOptions = (unit?: string | null) => unit === 'gram' || unit === 'kilogram' ? ['gram', 'kilogram'] : unit === 'mililiter' || unit === 'liter' ? ['mililiter', 'liter'] : [unit || 'pcs'];
 const convertUnit = (quantity: number, from: string, to: string) => {
   if (from === to) return quantity;
   if (from === 'kilogram' && to === 'gram') return quantity * 1000;
@@ -22,12 +21,12 @@ const convertUnit = (quantity: number, from: string, to: string) => {
   if (from === 'mililiter' && to === 'liter') return quantity / 1000;
   return quantity;
 };
-const displayQuantity = (value: number) => String(Number(value.toFixed(3)));
 
 export function OrderScreen({ isTablet, session }: { isTablet: boolean; session: Session }) {
   const [tab, setTab] = useState<Tab>('catalog');
   const [quantities, setQuantities] = useState<Record<number, string>>({});
-  const [units, setUnits] = useState<Record<number, string>>({});
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
+  const [category, setCategory] = useState('Semua');
   const [online, setOnline] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [catalogLoading, setCatalogLoading] = useState(true);
@@ -47,7 +46,7 @@ export function OrderScreen({ isTablet, session }: { isTablet: boolean; session:
     setCatalogLoading(true); setCatalogError(null);
     try {
       const items = await getWarehouseCatalog(session);
-      setCatalog(items.map((item, index) => ({ id: Number(item.id), name: item.name, category: item.type, kind: 'bahan_baku' as const, unit: item.unit, stock: item.stock, price: Number(item.price), imageUrl: item.imageUrl ? `${API_URL.replace(/\/api\/v1\/?$/, '')}${item.imageUrl}` : null, color: ['#FFE0DA', '#FDE6D2', '#F5F0C9', '#DCEEE9'][index % 4] })));
+      setCatalog(items.map((item, index) => ({ id: Number(item.id), name: item.name, category: item.type, kind: 'bahan_baku' as const, unit: item.unit, stock: 1, price: Number(item.price), isAvailable: item.isAvailable !== false, imageUrl: item.imageUrl ? `${API_URL.replace(/\/api\/v1\/?$/, '')}${item.imageUrl}` : null, color: ['#FFE0DA', '#FDE6D2', '#F5F0C9', '#DCEEE9'][index % 4] })));
     } catch (error) { setCatalogError(error instanceof Error ? error.message : 'Katalog gagal dimuat'); }
     finally { setCatalogLoading(false); }
   }, [session]);
@@ -63,60 +62,36 @@ export function OrderScreen({ isTablet, session }: { isTablet: boolean; session:
     if (event.type === 'status') void loadOrders();
   }), [loadOrders]);
 
-  const lines = useMemo(() => catalog.flatMap((product) => {
+  const categories = useMemo(() => ['Semua', ...Array.from(new Set(catalog.map((item) => item.category)))], [catalog]);
+  const visibleCatalog = useMemo(() => catalog.filter((item) => category === 'Semua' || item.category === category), [catalog, category]);
+  const selectedProducts = useMemo(() => selectedIds.flatMap((id) => { const product = catalog.find((item) => item.id === id); return product ? [product] : []; }), [catalog, selectedIds]);
+  const lines = useMemo(() => selectedProducts.flatMap((product) => {
     const quantity = Number(quantities[product.id]);
     return Number.isFinite(quantity) && quantity > 0 ? [{ product, quantity, unit: product.unit === 'liter' ? 'liter' : 'kilogram' }] : [];
-  }), [catalog, quantities, units]);
+  }), [selectedProducts, quantities]);
   const estimatedTotal = lines.reduce((sum, line) => sum + line.product.price * convertUnit(line.quantity, line.unit, line.product.unit || 'pcs'), 0);
 
   const selectProduct = (product: Product) => {
     if (!online) return Alert.alert('Koneksi internet diperlukan', 'Untuk memesan ke pusat dibutuhkan akses internet.');
+    if (product.isAvailable === false) return Alert.alert('Bahan baku tidak tersedia', `${product.name} sedang tidak tersedia dan tidak dapat dimasukkan ke keranjang.`);
+    setSelectedIds((current) => current.includes(product.id) ? current : [...current, product.id]);
     setQuantities((current) => current[product.id] !== undefined ? current : ({ ...current, [product.id]: '1' }));
-    setUnits((current) => ({ ...current, [product.id]: product.unit === 'liter' ? 'liter' : 'kilogram' }));
-  };
-  const clampQuantity = (product: Product, requestedUnit = units[product.id] || product.unit || 'pcs') => {
-    const requested = Number(quantities[product.id]);
-    if (!Number.isFinite(requested) || requested <= 0) return;
-    const maximum = convertUnit(product.stock, product.unit || 'pcs', requestedUnit);
-    if (requested <= maximum) return;
-    setQuantities((current) => ({ ...current, [product.id]: displayQuantity(maximum) }));
-    Alert.alert('Jumlah melebihi stok', `Stok maksimum ${product.name} adalah ${displayQuantity(maximum)} ${requestedUnit}. Jumlah pesanan otomatis disesuaikan.`);
-  };
-  const changeUnit = (product: Product, unit: string) => {
-    setUnits((current) => ({ ...current, [product.id]: unit }));
-    const requested = Number(quantities[product.id]);
-    if (!Number.isFinite(requested) || requested <= 0) return;
-    const maximum = convertUnit(product.stock, product.unit || 'pcs', unit);
-    if (requested > maximum) {
-      setQuantities((current) => ({ ...current, [product.id]: displayQuantity(maximum) }));
-      Alert.alert('Jumlah melebihi stok', `Stok maksimum ${product.name} adalah ${displayQuantity(maximum)} ${unit}. Jumlah pesanan otomatis disesuaikan.`);
-    }
   };
   const removeSelection = (productId: number) => {
+    setSelectedIds((current) => current.filter((id) => id !== productId));
     setQuantities((current) => { const next = { ...current }; delete next[productId]; return next; });
-    setUnits((current) => { const next = { ...current }; delete next[productId]; return next; });
   };
   const submit = async () => {
     if (!online) return Alert.alert('Koneksi internet diperlukan', 'Untuk memesan ke pusat dibutuhkan akses internet.');
-    if (!lines.length) return Alert.alert('Pesanan kosong', 'Isi jumlah bahan baku yang ingin dipesan.');
-    const exceeded = lines.filter((line) => convertUnit(line.quantity, line.unit, line.product.unit || 'pcs') > line.product.stock);
-    if (exceeded.length) {
-      setQuantities((current) => {
-        const next = { ...current };
-        for (const line of exceeded) next[line.product.id] = displayQuantity(convertUnit(line.product.stock, line.product.unit || 'pcs', line.unit));
-        return next;
-      });
-      const first = exceeded[0];
-      const maximum = displayQuantity(convertUnit(first.product.stock, first.product.unit || 'pcs', first.unit));
-      return Alert.alert('Jumlah melebihi stok', `Stok maksimum ${first.product.name} adalah ${maximum} ${first.unit}. Jumlah pesanan otomatis disesuaikan.`);
-    }
+    if (!selectedProducts.length) return Alert.alert('Pesanan kosong', 'Pilih bahan baku yang ingin dipesan.');
+    if (lines.length !== selectedProducts.length) return Alert.alert('Jumlah belum lengkap', 'Isi jumlah kilogram atau liter untuk semua bahan baku di keranjang.');
     setSubmitting(true);
     try {
       const created = await createProcurementOrder(session, lines.map((line) => ({ warehouseId: line.product.id, quantity: line.quantity, unit: line.unit })));
       const payment = await getCentralPayment(session).catch(() => ({ qrisImageUrl: null, whatsappNumber: null }));
       setCompletedOrder(created); setCentralPayment(payment); setCartVisible(false);
       await loadOrders();
-      setQuantities({}); setUnits({}); setTab('status');
+      setQuantities({}); setSelectedIds([]); setTab('status');
     } catch (error) { Alert.alert('Pemesanan gagal', error instanceof Error ? error.message : 'Terjadi kesalahan'); } finally { setSubmitting(false); }
   };
 
@@ -132,13 +107,14 @@ export function OrderScreen({ isTablet, session }: { isTablet: boolean; session:
     {!online && <View style={styles.offline}><Text style={styles.offlineText}>Offline — pemesanan dinonaktifkan</Text></View>}
     {tab === 'catalog' ? <View style={styles.catalogWrap}>
       <View style={styles.orderIntro}><View><Text style={styles.introTitle}>Bahan Baku Pusat</Text><Text style={styles.introText}>Masukkan berat atau volume sesuai kebutuhan.</Text></View><View style={styles.countBadge}><Text style={styles.countText}>{lines.length} jenis</Text></View></View>
-      {catalogLoading ? <ActivityIndicator color={colors.primary} /> : catalogError ? <ErrorCard message={catalogError} online={online} retry={loadCatalog} /> : <FlatList data={catalog} key={isTablet ? 'tablet-order' : 'phone-order'} numColumns={isTablet ? 4 : 2} keyExtractor={(item) => String(item.id)} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.grid} ListEmptyComponent={<Text style={styles.empty}>Belum ada bahan baku di gudang pusat.</Text>} renderItem={({ item }) => <View style={styles.productWrap}>
-        <ProductCard product={item} onAdd={selectProduct} compact showPrice />
-        {quantities[item.id] !== undefined && <View style={styles.selectedBadge}><MaterialCommunityIcons name="check-circle" size={15} color={colors.primary} /><Text style={styles.selectedText}>Masuk keranjang</Text></View>}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.categoryFilters}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.categoryChip, category === item && styles.categoryChipActive]}><Text style={[styles.categoryChipText, category === item && styles.categoryChipTextActive]}>{item}</Text></Pressable>)}</ScrollView>
+      {catalogLoading ? <ActivityIndicator color={colors.primary} /> : catalogError ? <ErrorCard message={catalogError} online={online} retry={loadCatalog} /> : <FlatList data={visibleCatalog} key={isTablet ? 'tablet-order' : 'phone-order'} numColumns={isTablet ? 4 : 2} keyExtractor={(item) => String(item.id)} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.grid} ListEmptyComponent={<Text style={styles.empty}>Belum ada bahan baku pada kategori ini.</Text>} renderItem={({ item }) => <View style={styles.productWrap}>
+        <ProductCard product={item} onAdd={selectProduct} compact showPrice hideStock ignoreStock />
+        {selectedIds.includes(item.id) && <View style={styles.selectedBadge}><MaterialCommunityIcons name="check-circle" size={15} color={colors.primary} /><Text style={styles.selectedText}>Masuk keranjang</Text></View>}
       </View>} />}
-      {lines.length > 0 && <Pressable disabled={submitting} onPress={() => setCartVisible(true)} style={[styles.submit, !online && { opacity: 0.45 }]}><Text style={styles.submitText}>{`Lihat Keranjang · ${lines.length} produk`}</Text></Pressable>}
+      {selectedIds.length > 0 && <Pressable disabled={submitting} onPress={() => setCartVisible(true)} style={[styles.submit, !online && { opacity: 0.45 }]}><Text style={styles.submitText}>{`Lihat Keranjang · ${selectedIds.length} produk`}</Text></Pressable>}
     </View> : ordersLoading && orders.length === 0 ? <ActivityIndicator style={{ marginTop: 30 }} color={colors.primary} /> : ordersError ? <ErrorCard message={ordersError} online={online} retry={loadOrders} /> : <FlatList data={orders} keyExtractor={(item) => item.id} contentContainerStyle={styles.orderList} refreshing={ordersLoading} onRefresh={() => void loadOrders()} ListEmptyComponent={<Text style={styles.empty}>Belum ada pesanan ke pusat.</Text>} renderItem={({ item }) => <View style={styles.orderRow}><View style={styles.orderInfo}><Text style={styles.orderId}>PO #{item.id}</Text><Text style={styles.orderMeta}>{new Date(item.createdAt).toLocaleString('id-ID')}</Text>{item.items.map((line) => <Text key={line.id} style={styles.orderMeta}>{line.namaBarang}: {line.jumlahPesan} {line.satuan || 'pcs'}</Text>)}<Text style={styles.orderMeta}>Rp{Number(item.totalAmount).toLocaleString('id-ID')}</Text></View><View style={[styles.status, { backgroundColor: `${statusColors[item.status]}18` }]}><View style={[styles.statusDot, { backgroundColor: statusColors[item.status] }]} /><Text style={[styles.statusText, { color: statusColors[item.status] }]}>{item.status}</Text></View></View>} />}
-    <Modal visible={cartVisible} transparent animationType="slide" onRequestClose={() => setCartVisible(false)}><View style={styles.modalBackdrop}><View style={styles.cartModal}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Keranjang Pesanan</Text><Pressable onPress={() => setCartVisible(false)}><MaterialCommunityIcons name="close" size={24} color={colors.ink} /></Pressable></View><ScrollView contentContainerStyle={styles.cartContent}>{lines.map(({ product, unit }) => <View key={product.id} style={styles.cartRow}><View style={styles.cartInfo}><Text style={styles.cartName}>{product.name}</Text><Text style={styles.cartMeta}>Rp{product.price.toLocaleString('id-ID')} / {unit} · stok {displayQuantity(product.stock)} {unit}</Text></View><TextInput keyboardType="decimal-pad" value={quantities[product.id]} onChangeText={(value) => setQuantities((current) => ({ ...current, [product.id]: value.replace(',', '.') }))} onEndEditing={() => clampQuantity(product, unit)} style={styles.cartInput} /><Text style={styles.cartUnit}>{unit}</Text><Pressable onPress={() => removeSelection(product.id)}><MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.red} /></Pressable></View>)}</ScrollView><View style={styles.cartFooter}><View style={styles.totalRow}><Text style={styles.totalLabel}>Total pesanan</Text><Text style={styles.totalValue}>Rp{estimatedTotal.toLocaleString('id-ID')}</Text></View><Pressable disabled={submitting} onPress={() => void submit()} style={[styles.checkout, submitting && { opacity: .5 }]}><Text style={styles.submitText}>{submitting ? 'Mengirim...' : 'Buat Purchase Order'}</Text></Pressable></View></View></View></Modal>
+    <Modal visible={cartVisible} transparent animationType="slide" onRequestClose={() => setCartVisible(false)}><View style={styles.modalBackdrop}><View style={styles.cartModal}><View style={styles.modalHeader}><Text style={styles.modalTitle}>Keranjang Pesanan</Text><Pressable onPress={() => setCartVisible(false)}><MaterialCommunityIcons name="close" size={24} color={colors.ink} /></Pressable></View><ScrollView contentContainerStyle={styles.cartContent}>{selectedProducts.map((product) => { const unit = product.unit === 'liter' ? 'liter' : 'kilogram'; return <View key={product.id} style={styles.cartRow}><View style={styles.cartInfo}><Text style={styles.cartName}>{product.name}</Text><Text style={styles.cartMeta}>Rp{product.price.toLocaleString('id-ID')} / {unit}</Text></View><TextInput keyboardType="decimal-pad" value={quantities[product.id] ?? ''} placeholder="Jumlah" placeholderTextColor="#98A2B3" onChangeText={(value) => setQuantities((current) => ({ ...current, [product.id]: value.replace(',', '.') }))} style={styles.cartInput} /><Text style={styles.cartUnit}>{unit}</Text><Pressable onPress={() => removeSelection(product.id)}><MaterialCommunityIcons name="trash-can-outline" size={20} color={colors.red} /></Pressable></View>; })}</ScrollView><View style={styles.cartFooter}><View style={styles.totalRow}><Text style={styles.totalLabel}>Total pesanan</Text><Text style={styles.totalValue}>Rp{estimatedTotal.toLocaleString('id-ID')}</Text></View><Pressable disabled={submitting} onPress={() => void submit()} style={[styles.checkout, submitting && { opacity: .5 }]}><Text style={styles.submitText}>{submitting ? 'Mengirim...' : 'Buat Purchase Order'}</Text></Pressable></View></View></View></Modal>
     <Modal visible={Boolean(completedOrder)} transparent animationType="fade" onRequestClose={() => setCompletedOrder(null)}><View style={styles.modalBackdrop}><View style={styles.paymentModal}><Text style={styles.modalTitle}>Pesanan berhasil dibuat</Text><Text style={styles.paymentHint}>Scan QRIS pusat untuk melakukan pembayaran. Konfirmasi pembayaran dilakukan melalui WhatsApp.</Text>{centralPayment?.qrisImageUrl ? <Image source={{ uri: profileImageUri(centralPayment.qrisImageUrl) || undefined }} resizeMode="contain" style={styles.centralQris} /> : <View style={styles.qrisEmpty}><MaterialCommunityIcons name="qrcode" size={48} color={colors.muted} /><Text style={styles.cartMeta}>Pusat belum memasang QRIS</Text></View>}<Text style={styles.paymentTotal}>Rp{Number(completedOrder?.totalAmount || 0).toLocaleString('id-ID')}</Text><Pressable onPress={() => void sendWhatsapp()} style={styles.whatsapp}><MaterialCommunityIcons name="whatsapp" size={20} color="#FFF" /><Text style={styles.submitText}>Konfirmasi lewat WhatsApp</Text></Pressable><Pressable onPress={() => setCompletedOrder(null)} style={styles.closePayment}><Text style={styles.closePaymentText}>Tutup</Text></Pressable></View></View></Modal>
   </View>;
 }
@@ -150,7 +126,7 @@ function ErrorCard({ message, online, retry }: { message: string; online: boolea
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.canvas }, tabs: { flexDirection: 'row', backgroundColor: colors.surface, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: colors.line }, tab: { paddingVertical: 15, marginRight: 22, borderBottomWidth: 3, borderBottomColor: 'transparent' }, activeTab: { borderBottomColor: colors.primary }, tabText: { color: colors.muted, fontWeight: '700', fontSize: 13 }, activeTabText: { color: colors.primary },
   offline: { backgroundColor: colors.orangeSoft, padding: 9, alignItems: 'center' }, offlineText: { color: colors.orange, fontSize: 11, fontWeight: '800' }, catalogWrap: { flex: 1 }, orderIntro: { margin: 16, marginBottom: 5, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }, introTitle: { color: colors.ink, fontSize: 18, fontWeight: '900' }, introText: { color: colors.muted, fontSize: 11, marginTop: 3 }, countBadge: { backgroundColor: colors.primarySoft, paddingHorizontal: 11, paddingVertical: 7, borderRadius: 999 }, countText: { color: colors.primary, fontWeight: '800', fontSize: 11 },
-  grid: { padding: 16, paddingBottom: 110 }, gridRow: { gap: 12, marginBottom: 12 }, productWrap: { flex: 1, maxWidth: 230 }, quantityPanel: { marginTop: 8, padding: 9, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface }, quantityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, quantityTitle: { color: colors.ink, fontSize: 10, fontWeight: '800' }, removeSelection: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: colors.canvas }, quantityInput: { height: 40, marginTop: 6, borderWidth: 1, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 11, backgroundColor: '#FAFAFA', color: colors.ink }, unitRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 5, marginTop: 6 }, unitChip: { borderWidth: 1, borderColor: colors.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: colors.surface }, unitActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft }, unitText: { color: colors.muted, fontSize: 9, fontWeight: '700' }, unitActiveText: { color: colors.primary }, quantity: { color: colors.primary, fontSize: 10, fontWeight: '800', marginTop: 5, textAlign: 'center' },
+  categoryFilters: { paddingHorizontal: 16, paddingVertical: 10, gap: 8 }, categoryChip: { paddingHorizontal: 13, paddingVertical: 8, borderRadius: 999, borderWidth: 1, borderColor: colors.line, backgroundColor: colors.surface }, categoryChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft }, categoryChipText: { color: colors.muted, fontSize: 10, fontWeight: '800' }, categoryChipTextActive: { color: colors.primary }, grid: { padding: 16, paddingBottom: 110 }, gridRow: { gap: 12, marginBottom: 12 }, productWrap: { flex: 1, maxWidth: 230 }, quantityPanel: { marginTop: 8, padding: 9, borderWidth: 1, borderColor: colors.line, borderRadius: 12, backgroundColor: colors.surface }, quantityHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }, quantityTitle: { color: colors.ink, fontSize: 10, fontWeight: '800' }, removeSelection: { width: 28, height: 28, alignItems: 'center', justifyContent: 'center', borderRadius: 8, backgroundColor: colors.canvas }, quantityInput: { height: 40, marginTop: 6, borderWidth: 1, borderColor: colors.line, borderRadius: 10, paddingHorizontal: 11, backgroundColor: '#FAFAFA', color: colors.ink }, unitRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 5, marginTop: 6 }, unitChip: { borderWidth: 1, borderColor: colors.line, borderRadius: 8, paddingHorizontal: 8, paddingVertical: 5, backgroundColor: colors.surface }, unitActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft }, unitText: { color: colors.muted, fontSize: 9, fontWeight: '700' }, unitActiveText: { color: colors.primary }, quantity: { color: colors.primary, fontSize: 10, fontWeight: '800', marginTop: 5, textAlign: 'center' },
   empty: { color: colors.muted, textAlign: 'center', padding: 30 }, submit: { position: 'absolute', bottom: 14, left: 16, right: 16, backgroundColor: colors.primary, borderRadius: 14, padding: 16, alignItems: 'center' }, submitText: { color: '#FFFFFF', fontWeight: '800' }, errorCard: { margin: 16, padding: 18, borderRadius: 14, backgroundColor: colors.surface, alignItems: 'center' }, errorText: { color: colors.orange, textAlign: 'center', fontWeight: '700' }, retryButton: { marginTop: 12, backgroundColor: colors.primary, borderRadius: 10, paddingHorizontal: 18, paddingVertical: 10 }, retryText: { color: '#FFFFFF', fontWeight: '800' },
   orderList: { margin: 16, backgroundColor: colors.surface, borderRadius: 16, paddingHorizontal: 14 }, orderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 10, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: colors.line }, orderInfo: { flex: 1 }, orderId: { color: colors.ink, fontWeight: '900' }, orderMeta: { color: colors.muted, fontSize: 11, marginTop: 4 }, status: { flexDirection: 'row', gap: 6, paddingHorizontal: 10, paddingVertical: 6, borderRadius: 999, alignItems: 'center' }, statusDot: { width: 6, height: 6, borderRadius: 3 }, statusText: { fontWeight: '800', fontSize: 11, textTransform: 'capitalize' },
   selectedBadge: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, padding: 7, backgroundColor: colors.primarySoft, borderRadius: 9, marginTop: 6 }, selectedText: { color: colors.primary, fontSize: 9, fontWeight: '900' },

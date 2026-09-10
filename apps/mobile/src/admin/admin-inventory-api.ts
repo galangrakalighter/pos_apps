@@ -8,7 +8,7 @@ export interface PartnerStockSummary {
 }
 export interface PartnerProductStock { id: string; name: string; stock: number; price: string; kind: 'bahan_baku' | 'produk_jadi'; category: string; unit?: string | null; imageUrl: string | null; masterId: string | null; updatedAt: string; }
 export interface WarehouseRecipe { ingredientId: string; quantity: number; name?: string; unit?: string; }
-export interface WarehouseProduct { id: string; name: string; stock: number; type: string; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[]; imageUrl: string | null; }
+export interface WarehouseProduct { id: string; name: string; stock: number; type: string; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[]; imageUrl: string | null; isAvailable: boolean; }
 
 async function get<T>(path: string, session: Session): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
@@ -51,7 +51,7 @@ export const updatePartnerFinishedProduct = (session: Session, mitraId: string, 
 export const deletePartnerFinishedProduct = (session: Session, mitraId: string, id: string) =>
   mutateFinishedProduct(session, mitraId, `/${id}`, 'DELETE') as Promise<{ deleted: true; id: string }>;
 
-export async function createWarehouseProduct(session: Session, input: { name: string; type: string; stock: number; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[] }) {
+export async function createWarehouseProduct(session: Session, input: { name: string; type: string; stock: number; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[]; isAvailable: boolean }) {
   const response = await fetch(`${API_URL}/admin/warehouse`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.accessToken}` },
@@ -79,7 +79,7 @@ async function mutateWarehouseProduct(session: Session, path: string, method: 'P
   return payload;
 }
 
-export const updateWarehouseProduct = (session: Session, id: string, input: { name: string; type: string; stock: number; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[] }) =>
+export const updateWarehouseProduct = (session: Session, id: string, input: { name: string; type: string; stock: number; price: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string; recipes: WarehouseRecipe[]; isAvailable: boolean }) =>
   mutateWarehouseProduct(session, `/${id}`, 'PATCH', input) as Promise<WarehouseProduct>;
 
 export const deleteWarehouseProduct = (session: Session, id: string) =>

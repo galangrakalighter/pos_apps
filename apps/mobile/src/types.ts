@@ -12,6 +12,7 @@ export interface Product {
   kind: 'bahan_baku' | 'produk_jadi';
   unit?: string | null;
   recipeComplete?: boolean;
+  isAvailable?: boolean;
 }
 
 export interface CartItem extends Product {

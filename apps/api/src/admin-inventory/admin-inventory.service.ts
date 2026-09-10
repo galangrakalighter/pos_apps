@@ -224,7 +224,7 @@ export class AdminInventoryService {
   async warehouseCatalog() {
     return this.dataSource.query(
       `SELECT id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price,
-              jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl"
+              jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl", is_available AS "isAvailable"
          FROM warehouse WHERE jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY nama_bumbu, id`,
     );
   }
@@ -233,7 +233,7 @@ export class AdminInventoryService {
     this.assertAdmin(admin);
     return this.dataSource.query(
       `SELECT w.id::text, w.nama_bumbu AS name, w.stock::float8 AS stock, w.tipe AS type, w.harga::text AS price,
-              w.jenis_produk AS kind, w.satuan AS unit, w.image_url AS "imageUrl",
+              w.jenis_produk AS kind, w.satuan AS unit, w.image_url AS "imageUrl", w.is_available AS "isAvailable",
               COALESCE((SELECT json_agg(json_build_object('ingredientId', r.ingredient_id::text, 'quantity', r.quantity_required::float8, 'name', i.nama_bumbu, 'unit', r.satuan) ORDER BY i.nama_bumbu)
                 FROM product_recipes r JOIN warehouse i ON i.id = r.ingredient_id WHERE r.finished_product_id = w.id), '[]'::json) AS recipes
          FROM warehouse w WHERE w.deleted_at IS NULL ORDER BY w.jenis_produk, w.nama_bumbu, w.id`,
@@ -248,10 +248,10 @@ export class AdminInventoryService {
     );
     if (existing.length) throw new ConflictException('Nama produk gudang sudah digunakan');
     const rows = await this.dataSource.query(
-      `INSERT INTO warehouse (nama_bumbu, stock, tipe, harga, jenis_produk, satuan)
-       VALUES ($1, $2, $3, $4::numeric, $5, $6)
-       RETURNING id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price, jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl"`,
-      [dto.name.trim(), dto.stock ?? 0, dto.type.trim(), dto.price, dto.kind, dto.kind === 'bahan_baku' ? dto.unit : 'pcs'],
+      `INSERT INTO warehouse (nama_bumbu, stock, tipe, harga, jenis_produk, satuan, is_available)
+       VALUES ($1, 0, $2, $3::numeric, $4, $5, $6)
+       RETURNING id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price, jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl", is_available AS "isAvailable"`,
+      [dto.name.trim(), dto.type.trim(), dto.price, dto.kind, dto.kind === 'bahan_baku' ? dto.unit : 'pcs', dto.isAvailable],
     );
     await this.replaceRecipes(rows[0].id, dto.kind, dto.recipes);
     rows[0].recipes = dto.recipes;
@@ -281,10 +281,10 @@ export class AdminInventoryService {
     );
     if (duplicate.length) throw new ConflictException('Nama produk gudang sudah digunakan');
     const rows = await this.dataSource.query(
-      `UPDATE warehouse SET nama_bumbu = $1, tipe = $2, stock = $3, harga = $4::numeric, jenis_produk = $5, satuan = $6, updated_at = now()
+      `UPDATE warehouse SET nama_bumbu = $1, tipe = $2, stock = 0, harga = $3::numeric, jenis_produk = $4, satuan = $5, is_available = $6, updated_at = now()
         WHERE id = $7::bigint
-        RETURNING id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price, jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl"`,
-      [dto.name.trim(), dto.type.trim(), dto.stock, dto.price, dto.kind, dto.kind === 'bahan_baku' ? dto.unit : 'pcs', id],
+        RETURNING id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price, jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl", is_available AS "isAvailable"`,
+      [dto.name.trim(), dto.type.trim(), dto.price, dto.kind, dto.kind === 'bahan_baku' ? dto.unit : 'pcs', dto.isAvailable, id],
     );
     if (!rows[0]) throw new NotFoundException('Produk gudang tidak ditemukan');
     await this.replaceRecipes(id, dto.kind, dto.recipes);

@@ -28,8 +28,8 @@ export class AccountsService {
     try {
       return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
         const ids = [...seen].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
-        const warehouse: Array<{ id: string; itemName: string; stock: number; centralPrice: string; unit: string }> = await manager.query(
-          `SELECT id::text, nama_bumbu AS "itemName", stock::float8 AS stock, harga::text AS "centralPrice", satuan AS unit FROM warehouse
+        const warehouse: Array<{ id: string; itemName: string; centralPrice: string; unit: string; isAvailable: boolean }> = await manager.query(
+          `SELECT id::text, nama_bumbu AS "itemName", harga::text AS "centralPrice", satuan AS unit, is_available AS "isAvailable" FROM warehouse
             WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY id FOR UPDATE`, [ids],
         );
         if (warehouse.length !== ids.length) throw new BadRequestException('Barang gudang tidak ditemukan');
@@ -40,9 +40,8 @@ export class AccountsService {
           if (quantity === null) throw new BadRequestException(`Satuan ${input.unit} tidak sesuai untuk ${item.itemName} (${item.unit})`);
           return [item.id, quantity];
         }));
-        for (const item of warehouse) {
-          if (item.stock < normalized.get(item.id)!) throw new ConflictException(`Stok ${item.itemName} tidak cukup`);
-        }
+        const unavailable = warehouse.find((item) => !item.isAvailable);
+        if (unavailable) throw new ConflictException(`${unavailable.itemName} sedang tidak tersedia`);
 
         const users: UserProfileRow[] = await manager.query(
           `INSERT INTO users (username, password, wilayah, nama_mitra, email, "isPusat")
@@ -61,14 +60,6 @@ export class AccountsService {
         for (const warehouseItem of warehouse) {
           const input = byId.get(warehouseItem.id)!;
           const normalizedQuantity = normalized.get(warehouseItem.id)!;
-          // Baris gudang sudah dikunci oleh SELECT ... FOR UPDATE dan stoknya telah
-          // divalidasi di atas. Karena itu update ini aman dari concurrent order.
-          // Jangan mengandalkan panjang hasil UPDATE ... RETURNING: bentuk hasil raw
-          // query TypeORM berbeda antar versi/driver dan pernah memicu false conflict.
-          await manager.query(
-            `UPDATE warehouse SET stock = stock - $1, updated_at = now()
-              WHERE id = $2::bigint`, [normalizedQuantity, warehouseItem.id],
-          );
           const products: Array<{ id: string }> = await manager.query(
             `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
              VALUES ($1::uuid, $5::bigint, $2, 'bahan_baku', 'Bahan baku', $3, $4::numeric) RETURNING id::text`,

@@ -34,23 +34,22 @@ export class OrdersService {
     const ids = [...requestedItems.keys()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
 
     const saved = await this.dataSource.transaction(async (manager) => {
-      const products: Array<{ id: string; nama_bumbu: string; stock: number; harga: string; satuan: string }> =
+      const products: Array<{ id: string; nama_bumbu: string; harga: string; satuan: string; is_available: boolean }> =
         await manager.query(
-          `SELECT id::text, nama_bumbu, stock::float8 AS stock, harga::text, satuan
+          `SELECT id::text, nama_bumbu, harga::text, satuan, is_available
              FROM warehouse
             WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL
             ORDER BY id`,
           [ids],
         );
       if (products.length !== ids.length) throw new BadRequestException('Warehouse item not found');
+      const unavailable = products.find((product) => !product.is_available);
+      if (unavailable) throw new ConflictException(`${unavailable.nama_bumbu} sedang tidak tersedia`);
 
       const normalized = new Map(products.map((product) => {
         const requested = requestedItems.get(product.id)!;
         const quantity = this.convertUnit(requested.quantity, requested.unit, product.satuan);
         if (quantity === null) throw new BadRequestException(`Satuan ${requested.unit} tidak sesuai untuk ${product.nama_bumbu} (${product.satuan})`);
-        if (quantity > product.stock) {
-          throw new ConflictException(`Jumlah ${product.nama_bumbu} melebihi stok Gudang Pusat. Stok tersedia ${product.stock} ${product.satuan}`);
-        }
         return [product.id, quantity];
       }));
       const totalAmount = products.reduce((sum, product) => sum + Number(product.harga) * normalized.get(product.id)!, 0).toFixed(2);
@@ -154,8 +153,8 @@ export class OrdersService {
             [orderId],
           );
         for (const item of items) {
-          const warehouseRows: Array<{ id: string; stock: number; unit: string }> = await manager.query(
-            `SELECT id::text, stock::float8 AS stock, satuan AS unit
+          const warehouseRows: Array<{ id: string; unit: string }> = await manager.query(
+            `SELECT id::text, satuan AS unit
                FROM warehouse
               WHERE id = $1::bigint
               FOR UPDATE`,
@@ -165,13 +164,6 @@ export class OrdersService {
           if (!warehouseItem) throw new NotFoundException(`Bahan baku ${item.nama_barang} tidak ditemukan di Gudang Pusat`);
           const normalizedQuantity = this.convertUnit(item.jumlah_pesan, item.satuan, warehouseItem.unit);
           if (normalizedQuantity === null) throw new ConflictException(`Satuan ${item.nama_barang} tidak kompatibel dengan Gudang Pusat`);
-          if (warehouseItem.stock < normalizedQuantity) throw new ConflictException(`Stok ${item.nama_barang} tidak mencukupi`);
-          await manager.query(
-            `UPDATE warehouse
-                SET stock = stock - $1, updated_at = now()
-              WHERE id = $2::bigint`,
-            [normalizedQuantity, item.warehouse_id],
-          );
           await manager.query(
             `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
              VALUES ($1::uuid, $4::bigint, $2, 'bahan_baku', 'Bahan baku', $3, 0)

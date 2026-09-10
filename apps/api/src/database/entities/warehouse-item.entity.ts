@@ -9,4 +9,5 @@ export class WarehouseItem {
   @Column() tipe!: string;
   @Column({ type: 'numeric', precision: 18, scale: 2 }) harga!: string;
   @Column({ name: 'image_url', type: 'text', nullable: true }) imageUrl!: string | null;
+  @Column({ name: 'is_available', type: 'boolean', default: true }) isAvailable!: boolean;
 }
