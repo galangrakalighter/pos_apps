@@ -51,7 +51,12 @@ export class AdminInventoryService {
     const products = await this.dataSource.query(
       `SELECT p.id::text, p.nama_produk AS name,
               p.stock::float8 AS stock,
-              p.harga::text AS price, p.jenis_produk AS kind, COALESCE(p.kategori, 'Tanpa kategori') AS category,
+              p.harga::text AS price, p.jenis_produk AS kind,
+              CASE
+                WHEN p.jenis_produk = 'bahan_baku'
+                  THEN COALESCE(master.tipe, NULLIF(p.kategori, 'Bahan baku'), 'Bahan baku')
+                ELSE COALESCE(p.kategori, 'Produk jadi')
+              END AS category,
               p.image_url AS "imageUrl", p.master_produk_id::text AS "masterId", master.satuan AS unit,
               p.updated_at AS "updatedAt"
          FROM produk_mitra p
@@ -77,7 +82,11 @@ export class AdminInventoryService {
               p.stock::float8 AS stock,
               p.harga::text AS price,
               p.jenis_produk AS kind,
-              COALESCE(p.kategori, master.tipe, CASE WHEN p.jenis_produk = 'produk_jadi' THEN 'Produk jadi' ELSE 'Bahan baku' END) AS category,
+              CASE
+                WHEN p.jenis_produk = 'bahan_baku'
+                  THEN COALESCE(master.tipe, NULLIF(p.kategori, 'Bahan baku'), 'Bahan baku')
+                ELSE COALESCE(p.kategori, 'Produk jadi')
+              END AS category,
               COALESCE(p.image_url, master.image_url) AS "imageUrl", master.satuan AS unit,
               TRUE AS "recipeComplete",
               '[]'::json AS recipes,

@@ -208,8 +208,8 @@ export class OrdersService {
             [orderId],
           );
         for (const item of items) {
-          const warehouseRows: Array<{ id: string; unit: string }> = await manager.query(
-            `SELECT id::text, satuan AS unit
+          const warehouseRows: Array<{ id: string; unit: string; category: string }> = await manager.query(
+            `SELECT id::text, satuan AS unit, tipe AS category
                FROM warehouse
               WHERE id = $1::bigint
               FOR UPDATE`,
@@ -221,10 +221,13 @@ export class OrdersService {
           if (normalizedQuantity === null) throw new ConflictException(`Satuan ${item.nama_barang} tidak kompatibel dengan Gudang Pusat`);
           await manager.query(
             `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
-             VALUES ($1::uuid, $4::bigint, $2, 'bahan_baku', 'Bahan baku', $3, 0)
+             VALUES ($1::uuid, $4::bigint, $2, 'bahan_baku', $5, $3, 0)
              ON CONFLICT ON CONSTRAINT uq_produk_mitra_owner_kind_name
-             DO UPDATE SET stock = produk_mitra.stock + EXCLUDED.stock, master_produk_id = EXCLUDED.master_produk_id, updated_at = now()`,
-            [requesterId, item.nama_barang, normalizedQuantity, item.warehouse_id],
+             DO UPDATE SET stock = produk_mitra.stock + EXCLUDED.stock,
+                           master_produk_id = EXCLUDED.master_produk_id,
+                           kategori = EXCLUDED.kategori,
+                           updated_at = now()`,
+            [requesterId, item.nama_barang, normalizedQuantity, item.warehouse_id, warehouseItem.category],
           );
         }
       }

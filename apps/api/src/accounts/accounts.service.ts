@@ -28,8 +28,9 @@ export class AccountsService {
     try {
       return await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
         const ids = [...seen].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
-        const warehouse: Array<{ id: string; itemName: string; centralPrice: string; unit: string; isAvailable: boolean }> = await manager.query(
-          `SELECT id::text, nama_bumbu AS "itemName", harga::text AS "centralPrice", satuan AS unit, is_available AS "isAvailable" FROM warehouse
+        const warehouse: Array<{ id: string; itemName: string; centralPrice: string; unit: string; category: string; isAvailable: boolean }> = await manager.query(
+          `SELECT id::text, nama_bumbu AS "itemName", harga::text AS "centralPrice", satuan AS unit,
+                  tipe AS category, is_available AS "isAvailable" FROM warehouse
             WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY id FOR UPDATE`, [ids],
         );
         if (warehouse.length !== ids.length) throw new BadRequestException('Barang gudang tidak ditemukan');
@@ -62,8 +63,8 @@ export class AccountsService {
           const normalizedQuantity = normalized.get(warehouseItem.id)!;
           const products: Array<{ id: string }> = await manager.query(
             `INSERT INTO produk_mitra (mitra_id, master_produk_id, nama_produk, jenis_produk, kategori, stock, harga)
-             VALUES ($1::uuid, $5::bigint, $2, 'bahan_baku', 'Bahan baku', $3, $4::numeric) RETURNING id::text`,
-            [partner.id, warehouseItem.itemName, normalizedQuantity, '0.00', warehouseItem.id],
+             VALUES ($1::uuid, $5::bigint, $2, 'bahan_baku', $6, $3, $4::numeric) RETURNING id::text`,
+            [partner.id, warehouseItem.itemName, normalizedQuantity, '0.00', warehouseItem.id, warehouseItem.category],
           );
           const lineTotal = (Number(warehouseItem.centralPrice) * normalizedQuantity).toFixed(2);
           await manager.query(
