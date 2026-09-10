@@ -6,6 +6,29 @@ import { HistoryItemDto, SyncHistoryResult } from './dto/sync-history.dto';
 export class HistorySyncService {
   constructor(private readonly dataSource: DataSource) {}
 
+  mine(mitraId: string) {
+    return this.dataSource.query(
+      `SELECT h.uuid::text AS "uuid", h.id_produk::text AS "productId",
+              COALESCE(p.nama_produk, 'Produk') AS "productName",
+              h.terjual AS "soldQuantity", h.harga::text AS "price",
+              h.created_at AS "createdAt", h.keterangan AS "note",
+              COALESCE(h.transaction_uuid, h.uuid)::text AS "transactionUuid",
+              COALESCE(h.payment_method, 'tunai') AS "paymentMethod",
+              COALESCE(h.amount_paid, 0)::text AS "amountPaid",
+              COALESCE(h.change_amount, 0)::text AS "changeAmount",
+              COALESCE(h.transaction_total, h.harga * h.terjual)::text AS "transactionTotal",
+              COALESCE(h.raw_material_addons, '[]'::jsonb) AS "rawMaterialAddons",
+              h.discount_id::text AS "discountId", h.discount_name AS "discountName",
+              h.discount_type AS "discountType", COALESCE(h.discount_value, 0)::text AS "discountValue",
+              COALESCE(h.discount_amount, 0)::text AS "discountAmount"
+         FROM history h
+         LEFT JOIN produk_mitra p ON p.id = h.id_produk AND p.mitra_id = h.mitra_id
+        WHERE h.mitra_id = $1::uuid
+        ORDER BY h.created_at DESC`,
+      [mitraId],
+    );
+  }
+
   async sync(mitraId: string, items: HistoryItemDto[]): Promise<SyncHistoryResult> {
     if (items.length === 0) return { acknowledgedUuids: [] };
 

@@ -166,14 +166,13 @@ export function PosScreen({
         name: item.name,
         quantity: item.quantity,
         priceCents: Math.round(item.price * 100),
-        addons:
-          item.category.trim().toLowerCase() === "bumbu tabur"
-            ? rawMaterials
-                .filter((raw) =>
-                  (selectedAddons[item.id] ?? []).includes(raw.id),
-                )
-                .map((raw) => raw.name)
-            : [],
+        addons: rawMaterials
+          .filter(
+            (raw) =>
+              raw.category.trim().toLowerCase() === "bumbu tabur" &&
+              (selectedAddons[item.id] ?? []).includes(raw.id),
+          )
+          .map((raw) => raw.name),
       }));
       const result = await recordTransaction(
         session.mitraId,
@@ -185,13 +184,13 @@ export function PosScreen({
           rawMaterialAddonsByProduct: Object.fromEntries(
             cart.map((item) => [
               item.id,
-              item.category.trim().toLowerCase() === "bumbu tabur"
-                ? rawMaterials
-                    .filter((raw) =>
-                      (selectedAddons[item.id] ?? []).includes(raw.id),
-                    )
-                    .map((raw) => ({ productId: raw.id, name: raw.name }))
-                : [],
+              rawMaterials
+                .filter(
+                  (raw) =>
+                    raw.category.trim().toLowerCase() === "bumbu tabur" &&
+                    (selectedAddons[item.id] ?? []).includes(raw.id),
+                )
+                .map((raw) => ({ productId: raw.id, name: raw.name })),
             ]),
           ),
           discount,

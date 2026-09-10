@@ -161,4 +161,11 @@ export async function initializeDatabase(): Promise<void> {
     if (!names.has('discount_amount_cents')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_amount_cents INTEGER NOT NULL DEFAULT 0');
     await db.execAsync('PRAGMA user_version = 13');
   }
+  if ((version?.user_version ?? 0) < 14) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_history)');
+    if (!columns.some((column) => column.name === 'product_name')) {
+      await db.execAsync('ALTER TABLE local_history ADD COLUMN product_name TEXT');
+    }
+    await db.execAsync('PRAGMA user_version = 14');
+  }
 }

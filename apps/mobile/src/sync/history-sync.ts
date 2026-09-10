@@ -1,6 +1,6 @@
 import NetInfo from '@react-native-community/netinfo';
 import { API_URL } from '../config';
-import { getPendingSales, markSalesSynced } from '../database/sales.repository';
+import { getPendingSales, markSalesSynced, restoreSyncedSales, ServerSale } from '../database/sales.repository';
 
 export interface SyncSession {
   userId: string;
@@ -21,7 +21,7 @@ async function performSync(session: SyncSession): Promise<void> {
   // local update, the next attempt resends UUIDs and the API safely deduplicates.
   for (;;) {
     const pending = await getPendingSales(session.userId, 100);
-    if (pending.length === 0) return;
+    if (pending.length === 0) break;
 
     const response = await fetch(`${API_URL}/history/sync`, {
       method: 'POST',
@@ -60,8 +60,16 @@ async function performSync(session: SyncSession): Promise<void> {
 
     const result = (await response.json()) as { acknowledgedUuids: string[] };
     await markSalesSynced(session.userId, result.acknowledgedUuids);
-    if (result.acknowledgedUuids.length < pending.length) return;
+    if (result.acknowledgedUuids.length < pending.length) break;
   }
+
+  const response = await fetch(`${API_URL}/history/mine`, {
+    headers: session.accessToken
+      ? { Authorization: `Bearer ${session.accessToken}` }
+      : { 'x-user-id': session.userId },
+  });
+  if (!response.ok) throw new Error(`History restore failed (${response.status})`);
+  await restoreSyncedSales(session.userId, (await response.json()) as ServerSale[]);
 }
 
 export function syncHistory(session: SyncSession): Promise<void> {

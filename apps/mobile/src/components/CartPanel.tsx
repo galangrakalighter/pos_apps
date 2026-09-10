@@ -17,6 +17,7 @@ interface Props {
 
 export function CartPanel({ items, onChangeQuantity, onCheckout, onBack, onClear, onRemoveItem, rawMaterials, selectedAddons, onToggleAddon }: Props) {
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const toppings = rawMaterials.filter((material) => material.category.trim().toLowerCase() === 'bumbu tabur');
   return (
     <View style={styles.panel}>
       <View style={styles.headingRow}>
@@ -29,7 +30,7 @@ export function CartPanel({ items, onChangeQuantity, onCheckout, onBack, onClear
         ) : items.map((item) => (
           <View key={item.id} style={styles.itemBlock}><View style={styles.item}>
             <View style={styles.itemInfo}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.itemPrice}>{rupiah(item.price)}</Text></View><View style={styles.stepper}><Pressable onPress={() => onChangeQuantity(item.id, -1)} style={styles.stepButton}><Text style={styles.stepText}>−</Text></Pressable><Text style={styles.quantity}>{item.quantity}</Text><Pressable onPress={() => onChangeQuantity(item.id, 1)} style={styles.stepButton}><Text style={styles.stepText}>＋</Text></Pressable><Pressable accessibilityLabel={`Hapus ${item.name}`} onPress={() => onRemoveItem(item.id)} style={styles.removeButton}><Text style={styles.removeText}>×</Text></Pressable></View>
-          </View>{item.category.trim().toLowerCase() === 'bumbu tabur' && <><Text style={styles.addonTitle}>Add-on bahan baku (opsional)</Text><View style={styles.addonOptions}>{rawMaterials.map((material) => { const active = (selectedAddons[item.id] ?? []).includes(material.id); return <Pressable key={material.id} onPress={() => onToggleAddon(item.id, material.id)} style={[styles.addonChip, active && styles.addonChipActive]}><Text style={[styles.addonChipText, active && styles.addonChipTextActive]}>{active ? '✓ ' : '+ '}{material.name}</Text></Pressable>; })}</View></>}
+          </View><Text style={styles.addonTitle}>Taburan (opsional)</Text><View style={styles.addonOptions}>{toppings.length > 0 ? toppings.map((material) => { const active = (selectedAddons[item.id] ?? []).includes(material.id); return <Pressable key={material.id} onPress={() => onToggleAddon(item.id, material.id)} style={[styles.addonChip, active && styles.addonChipActive]}><Text style={[styles.addonChipText, active && styles.addonChipTextActive]}>{active ? '✓ ' : '+ '}{material.name}</Text></Pressable>; }) : <Text style={styles.noAddonText}>Belum ada pilihan bumbu tabur.</Text>}</View>
           </View>
         ))}
       </ScrollView>
@@ -76,6 +77,7 @@ const styles = StyleSheet.create({
   addonChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
   addonChipText: { color: colors.muted, fontSize: 9, fontWeight: '700' },
   addonChipTextActive: { color: colors.primary, fontWeight: '900' },
+  noAddonText: { color: colors.muted, fontSize: 10, fontStyle: 'italic' },
   summary: { padding: 18, borderTopWidth: 1, borderTopColor: colors.line },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 },
   totalLabel: { color: colors.muted, fontSize: 13 },

@@ -28,6 +28,63 @@ export interface LocalSale {
   discount_id: number | null; discount_name: string | null; discount_type: 'percent' | 'fixed' | null; discount_value: number; discount_amount_cents: number;
 }
 
+export interface ServerSale {
+  uuid: string;
+  productId: string;
+  productName: string;
+  soldQuantity: number;
+  price: string;
+  createdAt: string;
+  note: string | null;
+  transactionUuid: string;
+  paymentMethod: PaymentMethod;
+  amountPaid: string;
+  changeAmount: string;
+  transactionTotal: string;
+  rawMaterialAddons: Array<{ productId: string; name: string }>;
+  discountId: string | null;
+  discountName: string | null;
+  discountType: 'percent' | 'fixed' | null;
+  discountValue: string;
+  discountAmount: string;
+}
+
+export async function restoreSyncedSales(ownerId: string, rows: ServerSale[]): Promise<void> {
+  if (!rows.length) return;
+  const db = await getDatabase();
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    for (const row of rows) {
+      // Keep historical rows restorable even when the product has since been
+      // removed from the current catalogue. The normal product sync will
+      // replace this inactive placeholder when the product still exists.
+      await transaction.runAsync(
+        `INSERT OR IGNORE INTO local_products
+          (server_id, name, stock, price_cents, category, product_kind, updated_at, owner_id, is_active)
+         VALUES (?, ?, 0, ?, 'Riwayat', 'produk_jadi', ?, ?, 0)`,
+        Number(row.productId), row.productName, Math.round(Number(row.price) * 100),
+        row.createdAt, ownerId,
+      );
+      await transaction.runAsync(
+        `INSERT INTO local_history
+          (uuid, product_id, product_name, sold_quantity, price_cents, created_at, note,
+           sync_status, synced_at, owner_id, transaction_uuid, payment_method,
+           amount_paid_cents, change_cents, transaction_total_cents, raw_material_addons,
+           discount_id, discount_name, discount_type, discount_value, discount_amount_cents)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 'synced', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(uuid) DO UPDATE SET
+           product_name=excluded.product_name, sync_status='synced', synced_at=excluded.synced_at`,
+        row.uuid, Number(row.productId), row.productName, row.soldQuantity,
+        Math.round(Number(row.price) * 100), row.createdAt, row.note,
+        new Date().toISOString(), ownerId, row.transactionUuid, row.paymentMethod,
+        Math.round(Number(row.amountPaid) * 100), Math.round(Number(row.changeAmount) * 100),
+        Math.round(Number(row.transactionTotal) * 100), JSON.stringify(row.rawMaterialAddons ?? []),
+        row.discountId ? Number(row.discountId) : null, row.discountName, row.discountType,
+        Number(row.discountValue || 0), Math.round(Number(row.discountAmount) * 100),
+      );
+    }
+  });
+}
+
 export async function recordSale(ownerId: string, productId: number, quantity: number, note?: string) {
   if (!Number.isInteger(quantity) || quantity <= 0) throw new Error('Invalid quantity');
   const db = await getDatabase();
@@ -167,7 +224,7 @@ export async function markSalesSynced(ownerId: string, uuids: string[]): Promise
 export async function getLocalSalesHistory(ownerId: string): Promise<LocalSale[]> {
   const db = await getDatabase();
   return db.getAllAsync<LocalSale>(
-    `SELECT h.uuid, h.product_id, COALESCE(p.name, 'Produk') AS product_name, h.sold_quantity,
+    `SELECT h.uuid, h.product_id, COALESCE(h.product_name, p.name, 'Produk') AS product_name, h.sold_quantity,
             h.price_cents, h.created_at, h.sync_status, h.payment_method,
             COALESCE(h.transaction_uuid, h.uuid) AS transaction_uuid,
             h.transaction_total_cents, h.amount_paid_cents, h.change_cents, h.note,
