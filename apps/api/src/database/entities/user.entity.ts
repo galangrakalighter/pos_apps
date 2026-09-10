@@ -10,4 +10,5 @@ export class User {
   @Column({ name: 'isPusat' }) isPusat!: boolean;
   @Column({ name: 'is_locked' }) isLocked!: boolean;
   @Column({ name: 'profile_image_url', type: 'text', nullable: true }) profileImageUrl!: string | null;
+  @Column({ type: 'varchar', length: 254, nullable: true }) email!: string | null;
 }

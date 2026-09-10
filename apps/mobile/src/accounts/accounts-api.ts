@@ -3,7 +3,7 @@ import { saveSession } from '../auth/session';
 import { Session } from '../types';
 
 export interface UserProfile {
-  id: string; username: string; partnerName: string; region: string | null; isPusat: boolean; profileImageUrl?: string | null;
+  id: string; username: string; partnerName: string; region: string | null; email?: string | null; isPusat: boolean; profileImageUrl?: string | null;
 }
 export interface CentralPaymentSettings { qrisImageUrl: string | null; whatsappNumber: string | null; }
 
@@ -82,10 +82,10 @@ export interface InitialStockInput {
   warehouseId: number; quantity: number; unit: string;
 }
 
-export function onboardPartnerWithStock(session: Session, username: string, password: string, items: InitialStockInput[]) {
+export function onboardPartnerWithStock(session: Session, input: { username: string; partnerName: string; email: string; password: string; region: string }, items: InitialStockInput[]) {
   return request<{ partner: UserProfile; distributionId: string | null; centralRevenue: string }>(
     '/admin/partners/onboard-with-stock', session,
-    { method: 'POST', body: JSON.stringify({ username, password, items: items.map((item) => ({ ...item, warehouseId: String(item.warehouseId) })) }) },
+    { method: 'POST', body: JSON.stringify({ ...input, items: items.map((item) => ({ ...item, warehouseId: String(item.warehouseId) })) }) },
   );
 }
 

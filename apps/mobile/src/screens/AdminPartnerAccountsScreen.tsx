@@ -8,6 +8,9 @@ import { Session } from '../types';
 
 export function AdminPartnerAccountsScreen({ session, onCreated }: { session: Session; onCreated?: () => void }) {
   const [username, setUsername] = useState('');
+  const [partnerName, setPartnerName] = useState('');
+  const [email, setEmail] = useState('');
+  const [region, setRegion] = useState('');
   const [password, setPassword] = useState('');
   const [catalog, setCatalog] = useState<WarehouseProduct[]>([]);
   const [selected, setSelected] = useState<WarehouseProduct[]>([]);
@@ -16,12 +19,12 @@ export function AdminPartnerAccountsScreen({ session, onCreated }: { session: Se
   const [catalogLoading, setCatalogLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const create = async () => {
-    if (username.trim().length < 3 || password.length < 8) return Alert.alert('Data belum valid', 'Username minimal 3 karakter dan password minimal 8 karakter.');
+    if (username.trim().length < 3 || partnerName.trim().length < 2 || region.trim().length < 2 || !/^\S+@\S+\.\S+$/.test(email.trim()) || password.length < 8) return Alert.alert('Data belum valid', 'Isi username, nama Mitra, email, wilayah, dan password minimal 8 karakter.');
     const items = selected.filter((item) => Number(quantities[item.id]) > 0).map((item) => ({ warehouseId: Number(item.id), quantity: Number(quantities[item.id]), unit: units[item.id] || item.unit }));
     setSaving(true);
     try {
-      const result = await onboardPartnerWithStock(session, username.trim(), password, items);
-      setUsername(''); setPassword(''); setQuantities({}); setUnits({}); setSelected([]);
+      const result = await onboardPartnerWithStock(session, { username: username.trim(), partnerName: partnerName.trim(), email: email.trim().toLowerCase(), password, region: region.trim() }, items);
+      setUsername(''); setPartnerName(''); setEmail(''); setRegion(''); setPassword(''); setQuantities({}); setUnits({}); setSelected([]);
       const message = result.distributionId
         ? `${result.partner.username} menerima stok awal. Omzet pusat: Rp${Number(result.centralRevenue).toLocaleString('id-ID')}`
         : `${result.partner.username} berhasil dibuat tanpa stok awal.`;
@@ -30,8 +33,20 @@ export function AdminPartnerAccountsScreen({ session, onCreated }: { session: Se
     finally { setSaving(false); }
   };
   useEffect(() => { setCatalogLoading(true); void getWarehouseCatalog(session).then(setCatalog).catch((error) => Alert.alert('Katalog gagal dimuat', error instanceof Error ? error.message : 'Terjadi kesalahan')).finally(() => setCatalogLoading(false)); }, [session.accessToken]);
-  const unitOptions = (item: WarehouseProduct) => item.unit === 'gram' || item.unit === 'kilogram' ? ['gram', 'kilogram'] : item.unit === 'mililiter' || item.unit === 'liter' ? ['mililiter', 'liter'] : [item.unit];
-  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled"><View style={styles.intro}><Text style={styles.heading}>Akun & bahan baku awal opsional</Text><Text style={styles.description}>Bahan baku dapat diberikan dengan satuan yang berbeda dan akan dikonversi otomatis ke satuan Gudang Pusat.</Text></View><View style={styles.card}><Text style={styles.section}>Kredensial Mitra</Text><Text style={styles.label}>Username</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="contoh: mitra.kemang" placeholderTextColor="#98A2B3" style={styles.input} /><Text style={styles.label}>Password awal</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Minimal 8 karakter" placeholderTextColor="#98A2B3" style={styles.input} /><Text style={styles.section}>Bahan baku awal (opsional)</Text>{catalogLoading ? <ActivityIndicator color={colors.primary} /> : <WarehouseProductPicker products={catalog} selectedIds={selected.map((item) => item.id)} onSelect={(item) => { setSelected((current) => [...current, item]); setUnits((current) => ({ ...current, [item.id]: item.unit })); }} />}{selected.map((item) => <View key={item.id} style={styles.stockBlock}><View style={styles.stockRow}><View style={styles.itemInfo}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.available}>{item.type} · tersedia {item.stock} {item.unit}</Text></View><TextInput keyboardType="decimal-pad" value={quantities[item.id] ?? ''} onChangeText={(value) => setQuantities((current) => ({ ...current, [item.id]: value.replace(',', '.') }))} placeholder="Jumlah" placeholderTextColor="#98A2B3" style={[styles.input, styles.qty]} /><Pressable onPress={() => { setSelected((current) => current.filter((product) => product.id !== item.id)); setQuantities((current) => { const next = { ...current }; delete next[item.id]; return next; }); setUnits((current) => { const next = { ...current }; delete next[item.id]; return next; }); }}><Text style={styles.remove}>×</Text></Pressable></View><View style={styles.unitRow}>{unitOptions(item).map((option) => <Pressable key={option} onPress={() => setUnits((current) => ({ ...current, [item.id]: option }))} style={[styles.unitChip, (units[item.id] || item.unit) === option && styles.unitActive]}><Text style={[styles.unitText, (units[item.id] || item.unit) === option && styles.unitActiveText]}>{option}</Text></Pressable>)}</View></View>)}<View style={styles.note}><Text style={styles.noteText}>Contoh: stok pusat 1 kilogram dan diberikan 200 gram, maka stok pusat otomatis menjadi 0,8 kilogram.</Text></View><Pressable disabled={saving} onPress={() => void create()} style={[styles.button, saving && { opacity: 0.5 }]}><Text style={styles.buttonText}>{saving ? 'Memproses...' : 'Buat akun Mitra'}</Text></Pressable></View></ScrollView>;
+  const unitOptions = (item: WarehouseProduct) => [item.unit === 'liter' ? 'liter' : 'kilogram'];
+  return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <View style={styles.intro}><Text style={styles.heading}>Akun & bahan baku awal opsional</Text><Text style={styles.description}>Lengkapi identitas Mitra dan, bila perlu, pilih stok awal dari Gudang Pusat.</Text></View>
+    <View style={styles.card}><Text style={styles.section}>Identitas dan kredensial Mitra</Text>
+      <Text style={styles.label}>Username untuk login</Text><TextInput value={username} onChangeText={setUsername} autoCapitalize="none" placeholder="contoh: mitra.kemang" placeholderTextColor="#98A2B3" style={styles.input} />
+      <Text style={styles.label}>Nama/label Mitra</Text><TextInput value={partnerName} onChangeText={setPartnerName} placeholder="contoh: Chiminro Kemang" placeholderTextColor="#98A2B3" style={styles.input} />
+      <Text style={styles.label}>Email</Text><TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="contoh: kemang@chiminro.id" placeholderTextColor="#98A2B3" style={styles.input} />
+      <Text style={styles.label}>Wilayah Mitra</Text><TextInput value={region} onChangeText={setRegion} placeholder="contoh: Jakarta Selatan" placeholderTextColor="#98A2B3" style={styles.input} />
+      <Text style={styles.label}>Password awal</Text><TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Minimal 8 karakter" placeholderTextColor="#98A2B3" style={styles.input} />
+      <Text style={styles.section}>Bahan baku awal (opsional)</Text>{catalogLoading ? <ActivityIndicator color={colors.primary} /> : <WarehouseProductPicker products={catalog} selectedIds={selected.map((item) => item.id)} onSelect={(item) => { setSelected((current) => [...current, item]); setUnits((current) => ({ ...current, [item.id]: item.unit })); }} />}
+      {selected.map((item) => <View key={item.id} style={styles.stockBlock}><View style={styles.stockRow}><View style={styles.itemInfo}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.available}>{item.type} · tersedia {item.stock} {item.unit}</Text></View><TextInput keyboardType="decimal-pad" value={quantities[item.id] ?? ''} onChangeText={(value) => setQuantities((current) => ({ ...current, [item.id]: value.replace(',', '.') }))} placeholder="Jumlah" placeholderTextColor="#98A2B3" style={[styles.input, styles.qty]} /><Pressable onPress={() => { setSelected((current) => current.filter((product) => product.id !== item.id)); setQuantities((current) => { const next = { ...current }; delete next[item.id]; return next; }); setUnits((current) => { const next = { ...current }; delete next[item.id]; return next; }); }}><Text style={styles.remove}>×</Text></Pressable></View><View style={styles.unitRow}>{unitOptions(item).map((option) => <Pressable key={option} onPress={() => setUnits((current) => ({ ...current, [item.id]: option }))} style={[styles.unitChip, (units[item.id] || item.unit) === option && styles.unitActive]}><Text style={[styles.unitText, (units[item.id] || item.unit) === option && styles.unitActiveText]}>{option}</Text></Pressable>)}</View></View>)}
+      <Pressable disabled={saving} onPress={() => void create()} style={[styles.button, saving && { opacity: 0.5 }]}><Text style={styles.buttonText}>{saving ? 'Memproses...' : 'Buat akun Mitra'}</Text></Pressable>
+    </View>
+  </ScrollView>;
 }
 
 const styles = StyleSheet.create({

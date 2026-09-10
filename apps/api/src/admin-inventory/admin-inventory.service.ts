@@ -267,6 +267,7 @@ export class AdminInventoryService {
 
   async createWarehouseProduct(admin: AuthenticatedUser, dto: CreateWarehouseProductDto) {
     this.assertAdmin(admin);
+    this.validateRawMaterialClassification(dto.kind, dto.type, dto.unit);
     const existing = await this.dataSource.query(
       `SELECT id FROM warehouse WHERE lower(nama_bumbu) = lower($1) AND jenis_produk = $2 AND deleted_at IS NULL LIMIT 1`, [dto.name.trim(), dto.kind],
     );
@@ -284,6 +285,7 @@ export class AdminInventoryService {
 
   async updateWarehouseProduct(admin: AuthenticatedUser, id: string, dto: UpdateWarehouseProductDto) {
     this.assertAdmin(admin);
+    this.validateRawMaterialClassification(dto.kind, dto.type, dto.unit);
     const current: Array<{ name: string; kind: string; usedInOrder: boolean; usedByPartner: boolean }> = await this.dataSource.query(
       `SELECT w.nama_bumbu AS name,
               w.jenis_produk AS kind,
@@ -374,6 +376,12 @@ export class AdminInventoryService {
       const type = extname(filename) === '.png' ? 'image/png' : extname(filename) === '.webp' ? 'image/webp' : 'image/jpeg';
       return new StreamableFile(data, { type, disposition: `inline; filename="${filename}"` });
     } catch { throw new NotFoundException('Gambar tidak ditemukan'); }
+  }
+
+  private validateRawMaterialClassification(kind: 'bahan_baku' | 'produk_jadi', type: string, unit: string) {
+    if (kind !== 'bahan_baku') return;
+    if (!['Bahan Baku Saus', 'Tepung', 'Bumbu Tabur'].includes(type)) throw new BadRequestException('Kategori bahan baku tidak valid');
+    if (!['kilogram', 'liter'].includes(unit)) throw new BadRequestException('Bahan baku hanya menggunakan satuan kilogram atau liter');
   }
 
   private assertAdmin(user: AuthenticatedUser) {

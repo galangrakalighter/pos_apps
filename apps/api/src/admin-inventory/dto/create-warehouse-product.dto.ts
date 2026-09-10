@@ -11,7 +11,7 @@ export class CreateWarehouseProductDto {
   @IsString() @MinLength(2) @MaxLength(150)
   name!: string;
 
-  @IsString() @IsIn(['Bahan Baku Saus', 'Tepung', 'Bumbu Tabur', 'Produk Jadi'])
+  @IsString() @MinLength(2) @MaxLength(100)
   type!: string;
 
   @IsOptional() @IsNumber({ maxDecimalPlaces: 3 }) @Min(0)

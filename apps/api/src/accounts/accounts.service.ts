@@ -10,7 +10,7 @@ import { UpdateOwnProfileDto } from './dto/update-own-profile.dto';
 import { AdminUpdatePartnerDto } from './dto/admin-update-partner.dto';
 
 export interface UserProfileRow {
-  id: string; username: string; password?: string; partnerName: string; region: string | null; isPusat: boolean; profileImageUrl?: string | null;
+  id: string; username: string; password?: string; partnerName: string; region: string | null; email?: string | null; isPusat: boolean; profileImageUrl?: string | null;
 }
 
 @Injectable()
@@ -45,10 +45,10 @@ export class AccountsService {
         }
 
         const users: UserProfileRow[] = await manager.query(
-          `INSERT INTO users (username, password, wilayah, nama_mitra, "isPusat")
-           VALUES ($1, $2, NULL, $3, FALSE)
-           RETURNING id::text, username, nama_mitra AS "partnerName", wilayah AS region, "isPusat" AS "isPusat"`,
-          [dto.username, await hash(dto.password, 12), dto.username],
+          `INSERT INTO users (username, password, wilayah, nama_mitra, email, "isPusat")
+           VALUES ($1, $2, $3, $4, lower($5), FALSE)
+           RETURNING id::text, username, nama_mitra AS "partnerName", wilayah AS region, email, "isPusat" AS "isPusat"`,
+          [dto.username, await hash(dto.password, 12), dto.region.trim(), dto.partnerName.trim(), dto.email.trim()],
         );
         const partner = users[0];
         if (inputs.length === 0) return { partner, distributionId: null, centralRevenue: '0.00' };
@@ -87,7 +87,7 @@ export class AccountsService {
         return { partner, distributionId: distributions[0].id, centralRevenue: totalAmount };
       });
     } catch (error) {
-      if (this.isUniqueViolation(error)) throw new ConflictException('Username sudah digunakan');
+      if (this.isUniqueViolation(error)) throw new ConflictException('Username atau email sudah digunakan');
       throw error;
     }
   }

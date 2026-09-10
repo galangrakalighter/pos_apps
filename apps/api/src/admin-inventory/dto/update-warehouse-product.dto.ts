@@ -1,5 +1,5 @@
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsIn, IsInt, IsNumberString, IsString, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsNumber, IsNumberString, IsString, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { RecipeItemDto } from './create-warehouse-product.dto';
 
 export class UpdateWarehouseProductDto {
@@ -9,7 +9,7 @@ export class UpdateWarehouseProductDto {
   @IsString() @MinLength(2) @MaxLength(100)
   type!: string;
 
-  @IsInt() @Min(0)
+  @IsNumber({ maxDecimalPlaces: 3 }) @Min(0)
   stock!: number;
 
   @IsNumberString()
@@ -18,7 +18,7 @@ export class UpdateWarehouseProductDto {
   @IsIn(['bahan_baku', 'produk_jadi'])
   kind!: 'bahan_baku' | 'produk_jadi';
 
-  @IsIn(['gram', 'kilogram', 'mililiter', 'liter', 'pcs', 'pack', 'botol', 'kaleng'])
+  @IsIn(['kilogram', 'liter', 'pcs'])
   unit!: string;
 
   @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => RecipeItemDto)

@@ -11,7 +11,9 @@ export interface ReceiptData {
 }
 
 const PRINTER_ADDRESS_KEY = 'pos_direct_printer_address';
-const PAPER_COLUMNS = 32;
+// Sebagian printer 58 mm generik menggunakan area efektif lebih sempit dari
+// 384 dot. Lebar 28 karakter mencegah printer membungkus kolom secara acak.
+const PAPER_COLUMNS = 28;
 let connectedPrinter: BluetoothDevice | null = null;
 
 const money = (cents: number) => `Rp${Math.round(cents / 100).toLocaleString('id-ID')}`;
@@ -65,12 +67,12 @@ function receiptBytes(receipt: ReceiptData) {
   const command = (...bytes: number[]) => parts.push(Buffer.from(bytes));
   const text = (value: string) => parts.push(Buffer.from(plain(value), 'latin1'));
 
-  command(0x1b, 0x40);
+  command(0x1b, 0x40); command(0x1b, 0x32); command(0x1b, 0x4d, 0x00);
   command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text(`${fit(receipt.merchantName || 'POS MITRA', PAPER_COLUMNS)}\n`);
   command(0x1b, 0x45, 0x00); text('BUKTI PEMBAYARAN\n'); command(0x1b, 0x61, 0x00);
   text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
   text(columns('No.', receipt.id.slice(0, 8).toUpperCase()));
-  text(columns('Tanggal', new Date(receipt.createdAt).toLocaleString('id-ID')));
+  text('Tanggal\n'); text(`${fit(new Date(receipt.createdAt).toLocaleString('id-ID'), PAPER_COLUMNS)}\n`);
   text(columns('Kasir', receipt.cashierName)); text(columns('Metode', receipt.paymentMethod));
   text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
   for (const item of receipt.items) {

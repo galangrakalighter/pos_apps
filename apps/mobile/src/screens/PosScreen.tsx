@@ -52,6 +52,8 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
     const selected = current[finishedProductId] ?? [];
     return { ...current, [finishedProductId]: selected.includes(rawMaterialId) ? selected.filter((id) => id !== rawMaterialId) : [...selected, rawMaterialId] };
   });
+  const removeItem = (id: number) => { setCart((current) => current.filter((item) => item.id !== id)); setSelectedAddons((current) => { const next = { ...current }; delete next[id]; return next; }); };
+  const clearCart = () => Alert.alert('Batalkan transaksi?', 'Seluruh produk di keranjang akan dihapus.', [{ text: 'Kembali', style: 'cancel' }, { text: 'Hapus semua', style: 'destructive', onPress: () => { setCart([]); setSelectedAddons({}); setShowCart(false); } }]);
   const checkout = async (method: PaymentMethod, amountPaid: number, note: string, discount: Discount | null) => {
     setPaying(true);
     try {
@@ -89,7 +91,7 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
     finally { setPaying(false); }
   };
 
-  const cartPanel = <CartPanel items={cart} rawMaterials={rawMaterials} selectedAddons={selectedAddons} onToggleAddon={toggleAddon} onChangeQuantity={changeQuantity} onCheckout={() => setPaymentVisible(true)} onBack={!isTablet ? () => setShowCart(false) : undefined} />;
+  const cartPanel = <CartPanel items={cart} rawMaterials={rawMaterials} selectedAddons={selectedAddons} onToggleAddon={toggleAddon} onChangeQuantity={changeQuantity} onRemoveItem={removeItem} onClear={clearCart} onCheckout={() => setPaymentVisible(true)} onBack={() => setShowCart(false)} />;
   return <View style={styles.screen}>
     {!isTablet && showCart ? cartPanel : <>
       <View style={styles.catalog}>
