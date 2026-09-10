@@ -4,7 +4,7 @@ import { ArrayMaxSize, IsArray, IsIn, IsNumber, IsNumberString, IsOptional, IsUU
 export class CreateOrderItemDto {
   @IsNumberString() warehouseId!: string;
   @IsNumber({ maxDecimalPlaces: 3 }) @Min(0.001) quantity!: number;
-  @IsIn(['gram', 'kilogram', 'mililiter', 'liter', 'pcs', 'pack', 'botol', 'kaleng']) unit!: string;
+  @IsIn(['kilogram', 'liter']) unit!: string;
 }
 
 export class CreateOrderDto {

@@ -24,8 +24,9 @@ import { useImmersiveNavigation } from './src/system/useImmersiveNavigation';
 import { connectOrderRealtime, subscribeOrderRealtime } from './src/realtime/order-realtime';
 import { refreshPartnerProducts } from './src/products/products-sync';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { DiscountManagementScreen } from './src/screens/DiscountManagementScreen';
 
-const titles: Record<ScreenName, string> = { pos: 'Kasir', history: 'Riwayat bisnis', inventory: 'Produk & stok', orders: 'Procurement', profile: 'Profil akun', adminSales: 'Monitoring penjualan', adminOrders: 'Fulfillment pesanan', adminAccounts: 'Manajemen akun mitra' };
+const titles: Record<ScreenName, string> = { pos: 'Kasir', history: 'Riwayat bisnis', inventory: 'Produk & stok', orders: 'Procurement', profile: 'Profil akun', adminSales: 'Monitoring penjualan', adminOrders: 'Fulfillment pesanan', adminAccounts: 'Manajemen akun mitra', adminDiscounts: 'Manajemen diskon' };
 
 export default function App() {
   useImmersiveNavigation();
@@ -50,7 +51,7 @@ export default function App() {
   }, []);
   useEffect(() => {
     if (!session || session.role === 'pusat') return;
-    return startTargetedSync(session, () => { void countPendingSales(session.mitraId).then(setPendingSync); });
+    return startTargetedSync(session, () => { setProductRevision((value) => value + 1); void countPendingSales(session.mitraId).then(setPendingSync); });
   }, [session]);
   useEffect(() => {
     if (!session) return;
@@ -87,7 +88,7 @@ export default function App() {
     refreshPending();
   };
   const logout = () => { void clearSession().then(() => { setSession(null); setScreen('pos'); }); };
-  const content = screen === 'pos' ? <PosScreen isTablet={isTablet} session={session} refreshKey={productRevision} onTransactionSaved={transactionSaved} /> : screen === 'history' ? <HistoryScreen session={session} /> : screen === 'inventory' ? (session.role === 'pusat' ? <WarehouseManagementScreen session={session} /> : <InventoryScreen session={session} refreshKey={productRevision} onRefreshed={refreshPending} />) : screen === 'orders' ? <OrderScreen isTablet={isTablet} session={session} /> : screen === 'profile' ? <ProfileScreen session={session} onSessionUpdated={setSession} onLogout={logout} /> : screen === 'adminSales' ? <OverviewSalesMonitoringScreen isTablet={isTablet} session={session} /> : screen === 'adminOrders' ? <AdminOrderManagementScreen session={session} /> : <MitraManagementScreen session={session} />;
+  const content = screen === 'pos' ? <PosScreen isTablet={isTablet} session={session} refreshKey={productRevision} onTransactionSaved={transactionSaved} /> : screen === 'history' ? <HistoryScreen session={session} /> : screen === 'inventory' ? (session.role === 'pusat' ? <WarehouseManagementScreen session={session} /> : <InventoryScreen session={session} refreshKey={productRevision} onRefreshed={refreshPending} />) : screen === 'orders' ? <OrderScreen isTablet={isTablet} session={session} /> : screen === 'profile' ? <ProfileScreen session={session} onSessionUpdated={setSession} onLogout={logout} /> : screen === 'adminSales' ? <OverviewSalesMonitoringScreen isTablet={isTablet} session={session} /> : screen === 'adminOrders' ? <AdminOrderManagementScreen session={session} /> : screen === 'adminDiscounts' ? <DiscountManagementScreen session={session} /> : <MitraManagementScreen session={session} />;
   return <SafeAreaProvider><SafeAreaView style={styles.safe}><StatusBar style="dark" /><View style={styles.shell}>{isTablet && <AppNavigation active={screen} onChange={setScreen} isTablet session={session} onLogout={logout} />}<View style={styles.main}><AppHeader title={titles[screen]} pendingSync={pendingSync} />{notification && <Pressable onPress={() => setNotification(null)} style={styles.notification}><MaterialCommunityIcons name="bell-ring-outline" size={20} color={colors.primary} /><Text style={styles.notificationText}>{notification}</Text><MaterialCommunityIcons name="close" size={18} color={colors.muted} /></Pressable>}{content}{!isTablet && <AppNavigation active={screen} onChange={setScreen} isTablet={false} session={session} onLogout={logout} />}</View></View></SafeAreaView></SafeAreaProvider>;
 }
 

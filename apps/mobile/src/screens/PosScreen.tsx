@@ -8,27 +8,32 @@ import { ensureLocalPartnerProducts, getLocalProducts } from '../products/produc
 import { colors } from '../theme';
 import { CartItem, Product, Session } from '../types';
 import { getLocalQrisImage } from '../payments/local-qris';
+import { Discount, getLocalDiscounts, syncDiscounts } from '../discounts/discounts-api';
+import { printReceipt } from '../printing/receipt-printer';
 
 export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSaved }: { isTablet: boolean; session: Session; refreshKey?: number; onTransactionSaved: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [rawMaterials, setRawMaterials] = useState<Product[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedRawMaterialIds, setSelectedRawMaterialIds] = useState<number[]>([]);
+  const [selectedAddons, setSelectedAddons] = useState<Record<number, number[]>>({});
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Semua');
   const [showCart, setShowCart] = useState(false);
   const [paymentVisible, setPaymentVisible] = useState(false);
   const [paying, setPaying] = useState(false);
   const [qrisImageUri, setQrisImageUri] = useState<string | null>(null);
+  const [discounts, setDiscounts] = useState<Discount[]>([]);
 
   useEffect(() => {
     setCart([]);
-    setSelectedRawMaterialIds([]);
+    setSelectedAddons({});
     const load = async () => {
       await ensureLocalPartnerProducts(session).catch(() => undefined);
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
       setRawMaterials(await getLocalProducts(session.mitraId, 'bahan_baku'));
       setQrisImageUri(await getLocalQrisImage(session.mitraId));
+      await syncDiscounts(session).catch(() => undefined);
+      setDiscounts(await getLocalDiscounts());
     };
     void load();
   }, [session.accessToken, session.mitraId, refreshKey]);
@@ -43,27 +48,48 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
     return found ? current.map((item) => item.id === product.id ? { ...item, quantity: Math.min(item.quantity + 1, item.stock) } : item) : [...current, { ...product, quantity: 1 }];
   });
   const changeQuantity = (id: number, delta: number) => setCart((current) => current.map((item) => item.id === id ? { ...item, quantity: Math.min(item.stock, item.quantity + delta) } : item).filter((item) => item.quantity > 0));
-  const toggleRawMaterial = (id: number) => setSelectedRawMaterialIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-
-  const checkout = async (method: PaymentMethod, amountPaid: number, note: string) => {
+  const toggleAddon = (finishedProductId: number, rawMaterialId: number) => setSelectedAddons((current) => {
+    const selected = current[finishedProductId] ?? [];
+    return { ...current, [finishedProductId]: selected.includes(rawMaterialId) ? selected.filter((id) => id !== rawMaterialId) : [...selected, rawMaterialId] };
+  });
+  const checkout = async (method: PaymentMethod, amountPaid: number, note: string, discount: Discount | null) => {
     setPaying(true);
     try {
+      const purchasedItems = cart.map((item) => ({ name: item.name, quantity: item.quantity, priceCents: Math.round(item.price * 100), addons: rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => raw.name) }));
       const result = await recordTransaction(
         session.mitraId,
         cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
         {
           method, amountPaidCents: Math.round(amountPaid * 100), note: note.trim() || undefined,
-          rawMaterialAddons: rawMaterials.filter((item) => selectedRawMaterialIds.includes(item.id)).map((item) => ({ productId: item.id, name: item.name })),
+          rawMaterialAddonsByProduct: Object.fromEntries(cart.map((item) => [item.id, rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => ({ productId: raw.id, name: raw.name }))])),
+          discount,
         },
       );
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
-      setCart([]); setSelectedRawMaterialIds([]); setShowCart(false); setPaymentVisible(false); onTransactionSaved();
-      Alert.alert('Pembayaran berhasil', `Total ${rupiah(result.totalCents / 100)}\nMetode ${paymentLabel(method)}${method === 'tunai' ? `\nKembalian ${rupiah(result.changeCents / 100)}` : ''}\n\nTransaksi tersimpan dan siap disinkronkan.`);
+      setCart([]); setSelectedAddons({}); setShowCart(false); setPaymentVisible(false); onTransactionSaved();
+      const receipt = {
+        id: result.transactionUuid,
+        merchantName: session.partnerName || 'POS Mitra',
+        cashierName: session.name,
+        createdAt: new Date().toISOString(),
+        paymentMethod: paymentLabel(method),
+        items: purchasedItems,
+        totalCents: result.totalCents,
+        amountPaidCents: method === 'tunai' ? Math.round(amountPaid * 100) : result.totalCents,
+        changeCents: result.changeCents,
+        discountName: discount?.name,
+        discountAmountCents: discount ? Math.max(0, purchasedItems.reduce((sum, item) => sum + item.priceCents * item.quantity, 0) - result.totalCents) : 0,
+        note: note.trim() || null,
+      };
+      Alert.alert('Pembayaran berhasil', `Total ${rupiah(result.totalCents / 100)}\nMetode ${paymentLabel(method)}${method === 'tunai' ? `\nKembalian ${rupiah(result.changeCents / 100)}` : ''}`, [
+        { text: 'Nanti', style: 'cancel' },
+        { text: 'Cetak struk', onPress: () => void printReceipt(receipt).catch((error) => Alert.alert('Struk gagal dicetak', error instanceof Error ? error.message : 'RawBT tidak dapat dibuka')) },
+      ]);
     } catch (error) { Alert.alert('Transaksi gagal', error instanceof Error ? error.message : 'Tidak dapat menyimpan transaksi'); }
     finally { setPaying(false); }
   };
 
-  const cartPanel = <CartPanel items={cart} rawMaterials={rawMaterials} selectedRawMaterialIds={selectedRawMaterialIds} onToggleRawMaterial={toggleRawMaterial} onChangeQuantity={changeQuantity} onCheckout={() => setPaymentVisible(true)} onBack={!isTablet ? () => setShowCart(false) : undefined} />;
+  const cartPanel = <CartPanel items={cart} rawMaterials={rawMaterials} selectedAddons={selectedAddons} onToggleAddon={toggleAddon} onChangeQuantity={changeQuantity} onCheckout={() => setPaymentVisible(true)} onBack={!isTablet ? () => setShowCart(false) : undefined} />;
   return <View style={styles.screen}>
     {!isTablet && showCart ? cartPanel : <>
       <View style={styles.catalog}>
@@ -74,15 +100,19 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
       </View>
       {isTablet && <View style={styles.cartColumn}>{cartPanel}</View>}
     </>}
-    <PaymentModal visible={paymentVisible} total={total} qrisImageUri={qrisImageUri} saving={paying} onClose={() => !paying && setPaymentVisible(false)} onConfirm={checkout} />
+    <PaymentModal visible={paymentVisible} subtotal={total} discounts={discounts} qrisImageUri={qrisImageUri} saving={paying} onClose={() => !paying && setPaymentVisible(false)} onConfirm={checkout} />
   </View>;
 }
 
-function PaymentModal({ visible, total, qrisImageUri, saving, onClose, onConfirm }: { visible: boolean; total: number; qrisImageUri: string | null; saving: boolean; onClose: () => void; onConfirm: (method: PaymentMethod, amountPaid: number, note: string) => void }) {
+function PaymentModal({ visible, subtotal, discounts, qrisImageUri, saving, onClose, onConfirm }: { visible: boolean; subtotal: number; discounts: Discount[]; qrisImageUri: string | null; saving: boolean; onClose: () => void; onConfirm: (method: PaymentMethod, amountPaid: number, note: string, discount: Discount | null) => void }) {
   const [method, setMethod] = useState<PaymentMethod>('tunai');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  useEffect(() => { if (visible) { setMethod('tunai'); setAmount(''); setNote(''); } }, [visible]);
+  const [discountId, setDiscountId] = useState<number | null>(null);
+  useEffect(() => { if (visible) { setMethod('tunai'); setAmount(''); setNote(''); setDiscountId(null); } }, [visible]);
+  const discount = discounts.find((item) => item.id === discountId) ?? null;
+  const discountAmount = discount ? Math.min(subtotal, discount.type === 'percent' ? Math.round(subtotal * discount.value) / 100 : discount.value) : 0;
+  const total = Math.max(0, subtotal - discountAmount);
   const paid = method === 'tunai' ? Number(amount || 0) : total;
   const change = Math.max(0, paid - total);
   const insufficient = method === 'tunai' && paid < total;
@@ -90,18 +120,19 @@ function PaymentModal({ visible, total, qrisImageUri, saving, onClose, onConfirm
   const confirm = () => {
     if (insufficient) return Alert.alert('Pembayaran kurang', `Masih kurang ${rupiah(total - paid)}.`);
     if (qrisUnavailable) return Alert.alert('QRIS belum tersedia', 'Konfigurasikan QRIS merchant resmi terlebih dahulu.');
-    onConfirm(method, paid, note);
+    onConfirm(method, paid, note, discount);
   };
   return <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
     <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={paymentStyles.backdrop}>
       <View style={paymentStyles.sheet}><ScrollView keyboardShouldPersistTaps="handled">
         <View style={paymentStyles.header}><View><Text style={paymentStyles.title}>Pembayaran</Text><Text style={paymentStyles.caption}>Periksa total sebelum menyimpan transaksi</Text></View><Pressable onPress={onClose}><Text style={paymentStyles.close}>×</Text></Pressable></View>
         <View style={paymentStyles.totalBox}><Text style={paymentStyles.totalLabel}>Total yang harus dibayar</Text><Text style={paymentStyles.totalValue}>{rupiah(total)}</Text></View>
+        <Text style={paymentStyles.label}>Diskon (opsional)</Text><ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={paymentStyles.methods}><Pressable onPress={() => setDiscountId(null)} style={[paymentStyles.method, discountId === null && paymentStyles.methodActive]}><Text style={[paymentStyles.methodText, discountId === null && paymentStyles.methodTextActive]}>Tanpa diskon</Text></Pressable>{discounts.map((item) => <Pressable key={item.id} onPress={() => setDiscountId(item.id)} style={[paymentStyles.method, discountId === item.id && paymentStyles.methodActive]}><Text style={[paymentStyles.methodText, discountId === item.id && paymentStyles.methodTextActive]}>{item.name} · {item.type === 'percent' ? `${item.value}%` : rupiah(item.value)}</Text></Pressable>)}</ScrollView>
         <Text style={paymentStyles.label}>Metode pembayaran</Text>
         <View style={paymentStyles.methods}>{(['tunai', 'qris'] as PaymentMethod[]).map((item) => <Pressable key={item} onPress={() => setMethod(item)} style={[paymentStyles.method, method === item && paymentStyles.methodActive]}><Text style={[paymentStyles.methodText, method === item && paymentStyles.methodTextActive]}>{paymentLabel(item)}</Text></Pressable>)}</View>
         {method === 'tunai' && <><Text style={paymentStyles.label}>Uang diterima</Text><TextInput value={amount} onChangeText={(value) => setAmount(value.replace(/[^0-9]/g, ''))} keyboardType="number-pad" placeholder="Masukkan nominal pembayaran" placeholderTextColor="#98A2B3" style={paymentStyles.input} /><View style={paymentStyles.quickRow}><Pressable onPress={() => setAmount(String(total))} style={paymentStyles.quick}><Text style={paymentStyles.quickText}>Uang pas</Text></Pressable>{[20000, 50000, 100000].filter((value) => value >= total).slice(0, 2).map((value) => <Pressable key={value} onPress={() => setAmount(String(value))} style={paymentStyles.quick}><Text style={paymentStyles.quickText}>{rupiah(value)}</Text></Pressable>)}</View></>}
         {method === 'qris' && <View style={paymentStyles.qrisBox}>{qrisImageUri ? <Image key={qrisImageUri} source={{ uri: qrisImageUri }} resizeMode="contain" style={paymentStyles.qrisImage} /> : <View style={paymentStyles.qrisMissing}><Text style={paymentStyles.qrisMissingTitle}>QRIS Mitra belum dipasang</Text><Text style={paymentStyles.qrisMissingText}>Buka halaman Profil untuk memilih gambar QRIS terlebih dahulu.</Text></View>}<Text style={paymentStyles.qrisAmount}>Total transaksi: {rupiah(total)}</Text><Text style={paymentStyles.qrisHint}>QRIS gambar bersifat statis. Pelanggan memasukkan nominal sesuai total, lalu kasir memastikan pembayaran diterima.</Text></View>}
-        <View style={paymentStyles.breakdown}><Summary label="Total" value={rupiah(total)} /><Summary label="Dibayar" value={rupiah(paid)} />{method === 'tunai' && <Summary label={insufficient ? 'Kekurangan' : 'Kembalian'} value={rupiah(insufficient ? total - paid : change)} warning={insufficient} strong />}</View>
+        <View style={paymentStyles.breakdown}><Summary label="Subtotal" value={rupiah(subtotal)} />{discount && <Summary label={`Diskon ${discount.name}`} value={`- ${rupiah(discountAmount)}`} />}<Summary label="Total" value={rupiah(total)} strong /><Summary label="Dibayar" value={rupiah(paid)} />{method === 'tunai' && <Summary label={insufficient ? 'Kekurangan' : 'Kembalian'} value={rupiah(insufficient ? total - paid : change)} warning={insufficient} strong />}</View>
         <Text style={paymentStyles.label}>Catatan transaksi (opsional)</Text><TextInput value={note} onChangeText={setNote} placeholder="Contoh: pelanggan member" placeholderTextColor="#98A2B3" style={paymentStyles.input} />
         <Pressable disabled={saving || insufficient || qrisUnavailable} onPress={confirm} style={[paymentStyles.confirm, (saving || insufficient || qrisUnavailable) && { opacity: .45 }]}><Text style={paymentStyles.confirmText}>{saving ? 'Menyimpan...' : `Konfirmasi ${paymentLabel(method)}`}</Text></Pressable>
         <Text style={paymentStyles.offline}>Pembayaran tetap dapat disimpan tanpa internet.</Text>

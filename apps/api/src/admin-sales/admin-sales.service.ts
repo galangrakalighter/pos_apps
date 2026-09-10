@@ -18,15 +18,17 @@ export class AdminSalesService {
     const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const byPartner = await this.dataSource.query(
-      `SELECT h.mitra_id AS "mitraId", u.nama_mitra AS "partnerName",
-              COUNT(*)::integer AS "transactionCount",
-              COALESCE(SUM(h.terjual), 0)::integer AS "itemsSold",
-              COALESCE(SUM(h.terjual * h.harga), 0)::text AS revenue
-         FROM history h
-         JOIN users u ON u.id = h.mitra_id
-         ${clause}
-        GROUP BY h.mitra_id, u.nama_mitra
-        ORDER BY SUM(h.terjual * h.harga) DESC`,
+      `WITH tx AS (
+         SELECT h.mitra_id, h.transaction_uuid, SUM(h.terjual)::integer AS items_sold,
+                GREATEST(0, SUM(h.terjual * h.harga) - MAX(h.discount_amount)) AS revenue
+           FROM history h ${clause}
+          GROUP BY h.mitra_id, h.transaction_uuid
+       )
+       SELECT tx.mitra_id AS "mitraId", u.nama_mitra AS "partnerName",
+              COUNT(*)::integer AS "transactionCount", COALESCE(SUM(tx.items_sold),0)::integer AS "itemsSold",
+              COALESCE(SUM(tx.revenue),0)::text AS revenue
+         FROM tx JOIN users u ON u.id=tx.mitra_id
+        GROUP BY tx.mitra_id,u.nama_mitra ORDER BY SUM(tx.revenue) DESC`,
       params,
     );
     const topProducts = await this.dataSource.query(

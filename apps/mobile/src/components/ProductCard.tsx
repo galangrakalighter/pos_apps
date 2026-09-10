@@ -6,7 +6,7 @@ import { rupiah } from '../data/mock';
 interface Props { product: Product; onAdd: (product: Product) => void; compact?: boolean; showPrice?: boolean; }
 
 export function ProductCard({ product, onAdd, compact, showPrice = true }: Props) {
-  const soldOut = product.stock <= 0 || (product.kind === 'produk_jadi' && (product.recipeComplete === false || product.price <= 0));
+  const soldOut = product.stock <= 0 || (product.kind === 'produk_jadi' && product.price <= 0);
   const shouldShowPrice = showPrice || product.price > 0;
   return (
     <Pressable
@@ -18,7 +18,7 @@ export function ProductCard({ product, onAdd, compact, showPrice = true }: Props
     >
       <View style={[styles.art, { backgroundColor: product.color }]}>
         {product.imageUrl ? <Image source={{ uri: product.imageUrl }} style={styles.image} resizeMode="cover" /> : <Text style={styles.artText}>{product.name.slice(0, 1)}</Text>}
-        <View style={styles.stockBadge}><Text style={styles.stockText}>{product.kind === 'produk_jadi' && product.recipeComplete === false ? 'Resep belum lengkap' : `Stok ${product.stock}${product.kind === 'bahan_baku' && product.unit ? ` ${product.unit}` : ''}`}</Text></View>
+        <View style={styles.stockBadge}><Text style={styles.stockText}>{`Stok ${product.stock}${product.kind === 'bahan_baku' && product.unit ? ` ${product.unit}` : ''}`}</Text></View>
       </View>
       <View style={styles.body}>
         <Text style={styles.category}>{product.category}</Text>

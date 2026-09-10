@@ -38,7 +38,7 @@ export class OrdersService {
         await manager.query(
           `SELECT id::text, nama_bumbu, stock::float8 AS stock, harga::text, satuan
              FROM warehouse
-            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku'
+            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL
             ORDER BY id`,
           [ids],
         );

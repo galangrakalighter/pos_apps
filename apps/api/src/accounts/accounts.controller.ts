@@ -47,6 +47,26 @@ export class AccountsController {
   profileImage(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file?: { buffer: Buffer; mimetype: string; originalname: string }) {
     return this.service.saveProfileImage(user, file);
   }
+
+  @Get('central-payment')
+  centralPayment(@CurrentUser() user: AuthenticatedUser) { return this.service.getCentralPayment(user); }
+
+  @Patch('central-payment')
+  centralPaymentNumber(@CurrentUser() user: AuthenticatedUser, @Body('whatsappNumber') whatsappNumber: string) {
+    return this.service.updateCentralWhatsApp(user, whatsappNumber);
+  }
+
+  @Post('central-payment/qris')
+  @UseInterceptors(FileInterceptor('image', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  centralQris(@CurrentUser() user: AuthenticatedUser, @UploadedFile() file?: { buffer: Buffer; mimetype: string; originalname: string }) {
+    return this.service.saveCentralQris(user, file);
+  }
+}
+
+@Controller('central-payment/images')
+export class CentralPaymentImagesController {
+  constructor(private readonly service: AccountsService) {}
+  @Get(':filename') image(@Param('filename') filename: string) { return this.service.centralQrisImage(filename); }
 }
 
 @Controller('profile/images')

@@ -138,4 +138,27 @@ export async function initializeDatabase(): Promise<void> {
     }
     await db.execAsync('PRAGMA user_version = 11');
   }
+  if ((version?.user_version ?? 0) < 12) {
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS local_discounts (
+        server_id INTEGER PRIMARY KEY NOT NULL,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK (type IN ('percent', 'fixed')),
+        value REAL NOT NULL CHECK (value > 0),
+        is_active INTEGER NOT NULL DEFAULT 1,
+        updated_at TEXT NOT NULL
+      );
+      PRAGMA user_version = 12;
+    `);
+  }
+  if ((version?.user_version ?? 0) < 13) {
+    const columns = await db.getAllAsync<{ name: string }>('PRAGMA table_info(local_history)');
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has('discount_id')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_id INTEGER');
+    if (!names.has('discount_name')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_name TEXT');
+    if (!names.has('discount_type')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_type TEXT');
+    if (!names.has('discount_value')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_value REAL NOT NULL DEFAULT 0');
+    if (!names.has('discount_amount_cents')) await db.execAsync('ALTER TABLE local_history ADD COLUMN discount_amount_cents INTEGER NOT NULL DEFAULT 0');
+    await db.execAsync('PRAGMA user_version = 13');
+  }
 }

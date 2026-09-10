@@ -3,7 +3,7 @@ import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View 
 import * as ImagePicker from 'expo-image-picker';
 import NetInfo from '@react-native-community/netinfo';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { getOwnProfile, profileImageUri, updateOwnProfile, uploadOwnProfileImage } from '../accounts/accounts-api';
+import { getCentralPayment, getOwnProfile, profileImageUri, updateCentralWhatsApp, updateOwnProfile, uploadCentralQris, uploadOwnProfileImage } from '../accounts/accounts-api';
 import { colors } from '../theme';
 import { Session } from '../types';
 import { getLocalQrisImage, saveLocalQrisImage } from '../payments/local-qris';
@@ -24,6 +24,8 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
   const [selectedImage, setSelectedImage] = useState<ImagePicker.ImagePickerAsset | null>(null);
   const [qrisImageUri, setQrisImageUri] = useState<string | null>(null);
   const [savingQris, setSavingQris] = useState(false);
+  const [centralQrisUrl, setCentralQrisUrl] = useState<string | null>(null);
+  const [whatsappNumber, setWhatsappNumber] = useState('');
   const change = (field: keyof Values, value: string) => setValues((current) => ({ ...current, [field]: value }));
 
   useEffect(() => { void NetInfo.fetch().then((network) => {
@@ -31,6 +33,7 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
     return getOwnProfile(session).then((profile) => { const username = profile.username?.trim() || safeUsername; const loaded = { username, partnerName: profile.partnerName?.trim() || username, region: profile.region ?? '' }; setValues(loaded); setSnapshot(loaded); setProfileImageUrl(profile.profileImageUrl ?? null); });
   }).catch((error) => Alert.alert('Profil tidak dapat dimuat', error instanceof Error ? error.message : 'Terjadi kesalahan')); }, [session.accessToken]);
   useEffect(() => { if (session.role === 'mitra') void getLocalQrisImage(session.mitraId).then(setQrisImageUri); }, [session.mitraId, session.role]);
+  useEffect(() => { if (session.role === 'pusat') void getCentralPayment(session).then((settings) => { setCentralQrisUrl(settings.qrisImageUrl); setWhatsappNumber(settings.whatsappNumber ?? ''); }).catch(() => undefined); }, [session.accessToken, session.role]);
   const cancel = () => { setValues(snapshot); setCurrentPassword(''); setNewPassword(''); setSelectedImage(null); setEditing(false); };
   const pickImage = async () => {
     try {
@@ -67,6 +70,12 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
     finally { setSavingQris(false); }
   };
   const confirmLogout = () => Alert.alert('Keluar dari aplikasi?', 'Anda harus terhubung ke internet untuk login kembali.', [{ text: 'Batal', style: 'cancel' }, { text: 'Logout', style: 'destructive', onPress: onLogout }]);
+  const pickCentralQris = async () => {
+    setSavingQris(true);
+    try { const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ['images'], allowsEditing: false, quality: .9 }); const asset = result.canceled ? null : result.assets?.[0]; if (!asset?.uri) return; const settings = await uploadCentralQris(session, asset); setCentralQrisUrl(settings.qrisImageUrl); Alert.alert('QRIS pusat tersimpan', 'QRIS akan ditampilkan setelah Mitra membuat pesanan.'); }
+    catch (error) { Alert.alert('QRIS gagal disimpan', error instanceof Error ? error.message : 'Terjadi kesalahan'); } finally { setSavingQris(false); }
+  };
+  const saveCentralPayment = async () => { try { const settings = await updateCentralWhatsApp(session, whatsappNumber); setWhatsappNumber(settings.whatsappNumber ?? ''); Alert.alert('Nomor tersimpan', 'Tombol WhatsApp pada pesanan Mitra sudah aktif.'); } catch (error) { Alert.alert('Nomor gagal disimpan', error instanceof Error ? error.message : 'Terjadi kesalahan'); } };
 
   const displayedImage = selectedImage?.uri ?? profileImageUri(profileImageUrl);
   return <ScrollView style={styles.screen} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
@@ -74,6 +83,7 @@ export function ProfileScreen({ session, onSessionUpdated, onLogout }: { session
     <View style={styles.card}><Text style={styles.sectionTitle}>Informasi akun</Text><Field label="Username" value={values.username} onChange={(value) => change('username', value)} editable={editing} autoCapitalize="none" /><Field label="Nama mitra" value={values.partnerName} onChange={(value) => change('partnerName', value)} editable={editing} /><Field label="Wilayah" value={values.region} onChange={(value) => change('region', value)} editable={editing} placeholder="Belum dilengkapi" /><Field label="Password" value={editing ? currentPassword : '••••••••'} onChange={setCurrentPassword} editable={editing} secure placeholder="Password saat ini" /></View>
     {editing && <View style={styles.card}><Text style={styles.sectionTitle}>Password baru</Text><Text style={styles.helper}>Kosongkan jika tidak ingin mengganti password.</Text><Field label="Password baru" value={newPassword} onChange={setNewPassword} editable secure placeholder="Minimal 8 karakter" /></View>}
     {session.role === 'mitra' && <View style={styles.card}><Text style={styles.sectionTitle}>QRIS pembayaran</Text><Text style={styles.helper}>Disimpan khusus untuk akun Mitra ini di perangkat. Penggantian gambar tidak memerlukan internet.</Text>{qrisImageUri ? <Image key={qrisImageUri} source={{ uri: qrisImageUri }} resizeMode="contain" style={styles.qrisPreview} /> : <View style={styles.qrisEmpty}><MaterialCommunityIcons name="qrcode" size={44} color={colors.muted} /><Text style={styles.qrisEmptyText}>Belum ada gambar QRIS</Text></View>}<Pressable disabled={savingQris} onPress={() => void pickQrisImage()} style={[styles.qrisButton, savingQris && { opacity: .5 }]}><MaterialCommunityIcons name="image-edit-outline" size={18} color="#FFF" /><Text style={styles.qrisButtonText}>{savingQris ? 'Menyimpan...' : qrisImageUri ? 'Ganti gambar QRIS' : 'Pilih gambar QRIS'}</Text></Pressable></View>}
+    {session.role === 'pusat' && <View style={styles.card}><Text style={styles.sectionTitle}>Pembayaran procurement</Text><Text style={styles.helper}>QRIS dan nomor WhatsApp ini ditampilkan kepada Mitra setelah pesanan berhasil dibuat.</Text>{centralQrisUrl ? <Image source={{ uri: profileImageUri(centralQrisUrl) || undefined }} resizeMode="contain" style={styles.qrisPreview} /> : <View style={styles.qrisEmpty}><MaterialCommunityIcons name="qrcode" size={44} color={colors.muted} /><Text style={styles.qrisEmptyText}>QRIS pusat belum dipasang</Text></View>}<TextInput value={whatsappNumber} onChangeText={(value) => setWhatsappNumber(value.replace(/[^0-9]/g, ''))} keyboardType="phone-pad" placeholder="Nomor WhatsApp, contoh 628123456789" placeholderTextColor="#98A2B3" style={styles.input} /><View style={styles.actions}><Pressable disabled={savingQris} onPress={() => void pickCentralQris()} style={styles.cancel}><Text style={styles.cancelText}>{savingQris ? 'Mengunggah...' : 'Ganti QRIS'}</Text></Pressable><Pressable onPress={() => void saveCentralPayment()} style={styles.save}><Text style={styles.saveText}>Simpan nomor</Text></Pressable></View></View>}
     {editing ? <View style={styles.actions}><Pressable disabled={saving} onPress={cancel} style={styles.cancel}><Text style={styles.cancelText}>Batal</Text></Pressable><Pressable disabled={saving} onPress={() => void save()} style={[styles.save, saving && { opacity: 0.5 }]}><Text style={styles.saveText}>{saving ? 'Menyimpan...' : 'Simpan perubahan'}</Text></Pressable></View> : <Pressable accessibilityRole="button" onPress={confirmLogout} style={styles.logoutButton}><Text style={styles.logoutText}>Logout</Text><Text style={styles.logoutHint}>Keluar dari akun di perangkat ini</Text></Pressable>}
   </ScrollView>;
 }

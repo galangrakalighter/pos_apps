@@ -9,11 +9,11 @@ interface Props {
   onCheckout: () => void;
   onBack?: () => void;
   rawMaterials: Product[];
-  selectedRawMaterialIds: number[];
-  onToggleRawMaterial: (id: number) => void;
+  selectedAddons: Record<number, number[]>;
+  onToggleAddon: (finishedProductId: number, rawMaterialId: number) => void;
 }
 
-export function CartPanel({ items, onChangeQuantity, onCheckout, onBack, rawMaterials, selectedRawMaterialIds, onToggleRawMaterial }: Props) {
+export function CartPanel({ items, onChangeQuantity, onCheckout, onBack, rawMaterials, selectedAddons, onToggleAddon }: Props) {
   const subtotal = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
   return (
     <View style={styles.panel}>
@@ -25,23 +25,11 @@ export function CartPanel({ items, onChangeQuantity, onCheckout, onBack, rawMate
         {items.length === 0 ? (
           <View style={styles.empty}><Text style={styles.emptyIcon}>＋</Text><Text style={styles.emptyTitle}>Keranjang masih kosong</Text><Text style={styles.emptyText}>Pilih produk untuk memulai transaksi.</Text></View>
         ) : items.map((item) => (
-          <View key={item.id} style={styles.item}>
-            <View style={styles.itemInfo}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.itemPrice}>{rupiah(item.price)}</Text></View>
-            <View style={styles.stepper}>
-              <Pressable onPress={() => onChangeQuantity(item.id, -1)} style={styles.stepButton}><Text style={styles.stepText}>−</Text></Pressable>
-              <Text style={styles.quantity}>{item.quantity}</Text>
-              <Pressable onPress={() => onChangeQuantity(item.id, 1)} style={styles.stepButton}><Text style={styles.stepText}>＋</Text></Pressable>
-            </View>
+          <View key={item.id} style={styles.itemBlock}><View style={styles.item}>
+            <View style={styles.itemInfo}><Text style={styles.itemName}>{item.name}</Text><Text style={styles.itemPrice}>{rupiah(item.price)}</Text></View><View style={styles.stepper}><Pressable onPress={() => onChangeQuantity(item.id, -1)} style={styles.stepButton}><Text style={styles.stepText}>−</Text></Pressable><Text style={styles.quantity}>{item.quantity}</Text><Pressable onPress={() => onChangeQuantity(item.id, 1)} style={styles.stepButton}><Text style={styles.stepText}>＋</Text></Pressable></View>
+          </View><Text style={styles.addonTitle}>Add-on bahan baku (opsional)</Text><View style={styles.addonOptions}>{rawMaterials.map((material) => { const active = (selectedAddons[item.id] ?? []).includes(material.id); return <Pressable key={material.id} onPress={() => onToggleAddon(item.id, material.id)} style={[styles.addonChip, active && styles.addonChipActive]}><Text style={[styles.addonChipText, active && styles.addonChipTextActive]}>{active ? '✓ ' : '+ '}{material.name}</Text></Pressable>; })}</View>
           </View>
         ))}
-        {items.length > 0 && <View style={styles.addonSection}>
-          <Text style={styles.addonTitle}>Bahan baku yang digunakan</Text>
-          <Text style={styles.addonHint}>Opsional · hanya informasi, stok tidak akan berkurang.</Text>
-          {rawMaterials.length ? <View style={styles.addonOptions}>{rawMaterials.map((material) => {
-            const active = selectedRawMaterialIds.includes(material.id);
-            return <Pressable key={material.id} onPress={() => onToggleRawMaterial(material.id)} style={[styles.addonChip, active && styles.addonChipActive]}><Text style={[styles.addonChipText, active && styles.addonChipTextActive]}>{active ? '✓ ' : '+ '}{material.name}</Text></Pressable>;
-          })}</View> : <Text style={styles.noAddons}>Belum ada bahan baku di stok Mitra.</Text>}
-        </View>}
       </ScrollView>
       <View style={styles.summary}>
         <View style={styles.totalRow}><Text style={styles.totalLabel}>Total pembayaran</Text><Text style={styles.total}>{rupiah(subtotal)}</Text></View>
@@ -66,6 +54,7 @@ const styles = StyleSheet.create({
   emptyTitle: { color: colors.ink, fontWeight: '800', fontSize: 16, marginTop: 14 },
   emptyText: { color: colors.muted, textAlign: 'center', marginTop: 5 },
   item: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: colors.line, gap: 8 },
+  itemBlock: { paddingBottom: 12, borderBottomWidth: 1, borderBottomColor: colors.line },
   itemInfo: { flex: 1 },
   itemName: { color: colors.ink, fontWeight: '700', fontSize: 14 },
   itemPrice: { color: colors.muted, marginTop: 3, fontSize: 12 },
@@ -73,15 +62,12 @@ const styles = StyleSheet.create({
   stepButton: { width: 29, height: 29, borderRadius: 8, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   stepText: { color: colors.primary, fontSize: 17, fontWeight: '700' },
   quantity: { color: colors.ink, minWidth: 18, textAlign: 'center', fontWeight: '800' },
-  addonSection: { marginTop: 16, paddingTop: 14, borderTopWidth: 1, borderTopColor: colors.line },
-  addonTitle: { color: colors.ink, fontSize: 13, fontWeight: '900' },
-  addonHint: { color: colors.muted, fontSize: 10, lineHeight: 15, marginTop: 3 },
-  addonOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 10 },
-  addonChip: { borderWidth: 1, borderColor: colors.line, backgroundColor: colors.canvas, borderRadius: 999, paddingHorizontal: 11, paddingVertical: 8 },
+  addonTitle: { color: colors.muted, fontSize: 9, fontWeight: '800', marginTop: 8 },
+  addonOptions: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginTop: 6 },
+  addonChip: { borderWidth: 1, borderColor: colors.line, borderRadius: 999, paddingHorizontal: 9, paddingVertical: 6 },
   addonChipActive: { borderColor: colors.primary, backgroundColor: colors.primarySoft },
-  addonChipText: { color: colors.muted, fontSize: 10, fontWeight: '700' },
+  addonChipText: { color: colors.muted, fontSize: 9, fontWeight: '700' },
   addonChipTextActive: { color: colors.primary, fontWeight: '900' },
-  noAddons: { color: colors.muted, fontSize: 10, fontStyle: 'italic', marginTop: 9 },
   summary: { padding: 18, borderTopWidth: 1, borderTopColor: colors.line },
   totalRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 14 },
   totalLabel: { color: colors.muted, fontSize: 13 },

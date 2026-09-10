@@ -158,7 +158,6 @@ export class AdminInventoryService {
         );
         const product = products[0];
         if (!product) throw new NotFoundException('Produk Mitra tidak ditemukan');
-        if (product.kind === 'bahan_baku' && item.delta > 0) throw new ForbiddenException('Bahan baku hanya dapat ditambah melalui pesanan ke Pusat');
         if (product.stock + item.delta < -0.000001) throw new ConflictException('Stok tidak mencukupi untuk dikurangi');
         const inserted = await manager.query(
           `INSERT INTO partner_stock_adjustments (uuid, mitra_id, product_id, delta, created_at)
@@ -185,7 +184,7 @@ export class AdminInventoryService {
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
       const masters: Array<{ id: string; name: string; category: string; imageUrl: string | null }> = await manager.query(
         `SELECT id::text, nama_bumbu AS name, tipe AS category, image_url AS "imageUrl"
-           FROM warehouse WHERE id = $1::bigint AND jenis_produk = 'produk_jadi' FOR UPDATE`, [dto.warehouseId],
+           FROM warehouse WHERE id = $1::bigint AND jenis_produk = 'produk_jadi' AND deleted_at IS NULL FOR UPDATE`, [dto.warehouseId],
       );
       const master = masters[0];
       if (!master) throw new NotFoundException('Master produk jadi tidak ditemukan');
@@ -251,7 +250,7 @@ export class AdminInventoryService {
     return this.dataSource.query(
       `SELECT id::text, nama_bumbu AS name, stock::float8 AS stock, tipe AS type, harga::text AS price,
               jenis_produk AS kind, satuan AS unit, image_url AS "imageUrl"
-         FROM warehouse WHERE jenis_produk = 'bahan_baku' ORDER BY nama_bumbu, id`,
+         FROM warehouse WHERE jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY nama_bumbu, id`,
     );
   }
 
@@ -262,14 +261,14 @@ export class AdminInventoryService {
               w.jenis_produk AS kind, w.satuan AS unit, w.image_url AS "imageUrl",
               COALESCE((SELECT json_agg(json_build_object('ingredientId', r.ingredient_id::text, 'quantity', r.quantity_required::float8, 'name', i.nama_bumbu, 'unit', r.satuan) ORDER BY i.nama_bumbu)
                 FROM product_recipes r JOIN warehouse i ON i.id = r.ingredient_id WHERE r.finished_product_id = w.id), '[]'::json) AS recipes
-         FROM warehouse w ORDER BY w.jenis_produk, w.nama_bumbu, w.id`,
+         FROM warehouse w WHERE w.deleted_at IS NULL ORDER BY w.jenis_produk, w.nama_bumbu, w.id`,
     );
   }
 
   async createWarehouseProduct(admin: AuthenticatedUser, dto: CreateWarehouseProductDto) {
     this.assertAdmin(admin);
     const existing = await this.dataSource.query(
-      `SELECT id FROM warehouse WHERE lower(nama_bumbu) = lower($1) AND jenis_produk = $2 LIMIT 1`, [dto.name.trim(), dto.kind],
+      `SELECT id FROM warehouse WHERE lower(nama_bumbu) = lower($1) AND jenis_produk = $2 AND deleted_at IS NULL LIMIT 1`, [dto.name.trim(), dto.kind],
     );
     if (existing.length) throw new ConflictException('Nama produk gudang sudah digunakan');
     const rows = await this.dataSource.query(
@@ -290,7 +289,7 @@ export class AdminInventoryService {
               w.jenis_produk AS kind,
               EXISTS (SELECT 1 FROM produk_mitra p WHERE p.master_produk_id = w.id) AS "usedByPartner",
               EXISTS (SELECT 1 FROM order_items oi WHERE oi.warehouse_id = w.id) AS "usedInOrder"
-         FROM warehouse w WHERE w.id = $1::bigint`, [id],
+         FROM warehouse w WHERE w.id = $1::bigint AND w.deleted_at IS NULL`, [id],
     );
     if (!current[0]) throw new NotFoundException('Produk gudang tidak ditemukan');
     if ((current[0].usedInOrder || current[0].usedByPartner) && current[0].kind !== dto.kind) {
@@ -300,7 +299,7 @@ export class AdminInventoryService {
       throw new ConflictException('Nama produk yang sudah memiliki riwayat order tidak dapat diubah; stok, tipe, dan harga tetap dapat diedit');
     }
     const duplicate = await this.dataSource.query(
-      `SELECT id FROM warehouse WHERE lower(nama_bumbu) = lower($1) AND jenis_produk = $2 AND id <> $3::bigint LIMIT 1`,
+      `SELECT id FROM warehouse WHERE lower(nama_bumbu) = lower($1) AND jenis_produk = $2 AND id <> $3::bigint AND deleted_at IS NULL LIMIT 1`,
       [dto.name.trim(), dto.kind, id],
     );
     if (duplicate.length) throw new ConflictException('Nama produk gudang sudah digunakan');
@@ -325,18 +324,20 @@ export class AdminInventoryService {
 
   async deleteWarehouseProduct(admin: AuthenticatedUser, id: string) {
     this.assertAdmin(admin);
-    try {
-      const rows = await this.dataSource.query(
-        `DELETE FROM warehouse WHERE id = $1::bigint RETURNING id::text`, [id],
+    return this.dataSource.transaction(async (manager) => {
+      const rows: Array<{ id: string; kind: string }> = await manager.query(
+        `UPDATE warehouse SET deleted_at = now(), updated_at = now()
+          WHERE id = $1::bigint AND deleted_at IS NULL
+          RETURNING id::text, jenis_produk AS kind`, [id],
       );
       if (!rows[0]) throw new NotFoundException('Produk gudang tidak ditemukan');
-      return { deleted: true, id: rows[0].id };
-    } catch (error) {
-      if (typeof error === 'object' && error !== null && 'code' in error && (error as { code?: string }).code === '23503') {
-        throw new ConflictException('Produk sudah memiliki riwayat order/distribusi dan tidak dapat dihapus');
+      // Riwayat order dan distribusi tetap utuh. Hanya pemakaian bahan pada
+      // resep aktif yang dilepas karena bahan tersebut tak lagi tersedia.
+      if (rows[0].kind === 'bahan_baku') {
+        await manager.query(`DELETE FROM product_recipes WHERE ingredient_id = $1::bigint`, [id]);
       }
-      throw error;
-    }
+      return { deleted: true, id: rows[0].id };
+    });
   }
 
   async saveWarehouseImage(admin: AuthenticatedUser, id: string, file?: { buffer: Buffer; mimetype: string; originalname: string }) {
@@ -394,7 +395,7 @@ export class AdminInventoryService {
     if (kind === 'produk_jadi' && recipes.length) {
       const ids = [...new Set(recipes.map((item) => item.ingredientId))];
       if (ids.length !== recipes.length) throw new BadRequestException('Bahan baku pada resep tidak boleh duplikat');
-      const ingredients: Array<{ id: string; unit: string }> = await this.dataSource.query(`SELECT id::text, satuan AS unit FROM warehouse WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku'`, [ids]);
+      const ingredients: Array<{ id: string; unit: string }> = await this.dataSource.query(`SELECT id::text, satuan AS unit FROM warehouse WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL`, [ids]);
       if (ingredients.length !== ids.length) throw new BadRequestException('Resep hanya boleh menggunakan bahan baku dari Gudang Pusat');
       const unitById = new Map(ingredients.map((item) => [item.id, item.unit]));
       for (const recipe of recipes) if (!this.compatibleUnits(recipe.unit, unitById.get(recipe.ingredientId)!)) throw new BadRequestException('Satuan resep tidak sesuai dengan jenis satuan bahan baku');

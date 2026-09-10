@@ -1,5 +1,5 @@
 export type UserRole = 'mitra' | 'pusat';
-export type ScreenName = 'pos' | 'history' | 'inventory' | 'orders' | 'profile' | 'adminSales' | 'adminOrders' | 'adminAccounts';
+export type ScreenName = 'pos' | 'history' | 'inventory' | 'orders' | 'profile' | 'adminSales' | 'adminOrders' | 'adminAccounts' | 'adminDiscounts';
 
 export interface Product {
   id: number;

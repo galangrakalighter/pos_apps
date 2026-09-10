@@ -4,6 +4,7 @@ import { syncPartnerProducts } from '../products/products-sync';
 import { Session } from '../types';
 import { syncHistory } from './history-sync';
 import { syncStockAdjustments } from './stock-adjustments-sync';
+import { syncDiscounts } from '../discounts/discounts-api';
 
 let running: Promise<void> | null = null;
 
@@ -37,6 +38,7 @@ async function processTargetedSync(session: Session, onComplete?: () => void) {
     await syncStockAdjustments({ userId: session.mitraId, accessToken: session.accessToken });
     await syncHistory({ userId: session.id, accessToken: session.accessToken });
     await syncPartnerProducts(session);
+    await syncDiscounts(session);
     await request(session, `/${job.id}/finish`, { method: 'PATCH', body: JSON.stringify({ success: true }) });
     onComplete?.();
   } catch (error) {

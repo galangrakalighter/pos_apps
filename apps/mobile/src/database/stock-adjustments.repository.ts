@@ -19,7 +19,6 @@ export async function adjustLocalStock(ownerId: string, productId: number, delta
       productId, ownerId,
     );
     if (!product) throw new Error('Produk tidak ditemukan');
-    if (product.product_kind === 'bahan_baku' && delta > 0) throw new Error('Bahan baku hanya dapat ditambah melalui pesanan ke Pusat');
     if (Number(product.stock) + delta < -0.000001) throw new Error('Stok tidak mencukupi untuk dikurangi');
     await transaction.runAsync(
       `UPDATE local_products SET stock = MAX(0, stock + ?), updated_at = ? WHERE server_id = ? AND owner_id = ?`,

@@ -14,16 +14,18 @@ export interface PendingSale {
   change_cents: number;
   transaction_total_cents: number;
   raw_material_addons: string;
+  discount_id: number | null; discount_name: string | null; discount_type: 'percent' | 'fixed' | null; discount_value: number; discount_amount_cents: number;
 }
 
 export type PaymentMethod = 'tunai' | 'qris' | 'transfer' | 'debit';
 
 export interface LocalSale {
-  uuid: string; product_name: string; sold_quantity: number; price_cents: number;
+  uuid: string; product_id: number; product_name: string; sold_quantity: number; price_cents: number;
   created_at: string; sync_status: 'pending' | 'synced'; payment_method: PaymentMethod;
   transaction_uuid: string; transaction_total_cents: number; amount_paid_cents: number; change_cents: number;
   note: string | null;
   raw_material_addons: string;
+  discount_id: number | null; discount_name: string | null; discount_type: 'percent' | 'fixed' | null; discount_value: number; discount_amount_cents: number;
 }
 
 export async function recordSale(ownerId: string, productId: number, quantity: number, note?: string) {
@@ -68,14 +70,13 @@ export async function recordSale(ownerId: string, productId: number, quantity: n
 export async function recordTransaction(
   ownerId: string,
   items: Array<{ productId: number; quantity: number }>,
-  payment: { method: PaymentMethod; amountPaidCents: number; note?: string; rawMaterialAddons?: Array<{ productId: number; name: string }> },
+  payment: { method: PaymentMethod; amountPaidCents: number; note?: string; rawMaterialAddonsByProduct?: Record<number, Array<{ productId: number; name: string }>>; discount?: { id: number; name: string; type: 'percent' | 'fixed'; value: number } | null },
 ) {
   if (!items.length || items.some((item) => !Number.isInteger(item.quantity) || item.quantity <= 0)) throw new Error('Keranjang tidak valid');
   const db = await getDatabase();
   const transactionUuid = Crypto.randomUUID();
   const createdAt = new Date().toISOString();
   let totalCents = 0;
-  const rawMaterialAddons = JSON.stringify(payment.rawMaterialAddons ?? []);
 
   await db.withExclusiveTransactionAsync(async (transaction) => {
     const pricedItems: Array<{ productId: number; quantity: number; priceCents: number }> = [];
@@ -90,6 +91,11 @@ export async function recordTransaction(
       totalCents += product.price_cents * item.quantity;
       pricedItems.push({ ...item, priceCents: product.price_cents });
     }
+    const subtotalCents = totalCents;
+    const discountAmountCents = payment.discount
+      ? Math.min(subtotalCents, payment.discount.type === 'percent' ? Math.round(subtotalCents * payment.discount.value / 100) : Math.round(payment.discount.value * 100))
+      : 0;
+    totalCents = subtotalCents - discountAmountCents;
     if (payment.method === 'tunai' && payment.amountPaidCents < totalCents) throw new Error('Nominal pembayaran tunai kurang');
     const amountPaidCents = payment.method === 'tunai' ? payment.amountPaidCents : totalCents;
     const changeCents = payment.method === 'tunai' ? amountPaidCents - totalCents : 0;
@@ -106,11 +112,12 @@ export async function recordTransaction(
         `INSERT INTO local_history
           (uuid, product_id, sold_quantity, price_cents, created_at, note, sync_status, owner_id,
            transaction_uuid, payment_method, amount_paid_cents, change_cents, transaction_total_cents,
-           raw_material_addons)
-         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)`,
+           raw_material_addons, discount_id, discount_name, discount_type, discount_value, discount_amount_cents)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         Crypto.randomUUID(), item.productId, item.quantity, item.priceCents, createdAt,
         payment.note ?? 'Transaksi POS', ownerId, transactionUuid, payment.method,
-        amountPaidCents, changeCents, totalCents, rawMaterialAddons,
+        amountPaidCents, changeCents, totalCents, JSON.stringify(payment.rawMaterialAddonsByProduct?.[item.productId] ?? []),
+        payment.discount?.id ?? null, payment.discount?.name ?? null, payment.discount?.type ?? null, payment.discount?.value ?? 0, discountAmountCents,
       );
     }
   });
@@ -122,7 +129,8 @@ export async function getPendingSales(ownerId: string, limit = 100): Promise<Pen
   return db.getAllAsync<PendingSale>(
     `SELECT uuid, product_id, sold_quantity, price_cents, created_at, note,
             COALESCE(transaction_uuid, uuid) AS transaction_uuid, payment_method,
-            amount_paid_cents, change_cents, transaction_total_cents, raw_material_addons
+            amount_paid_cents, change_cents, transaction_total_cents, raw_material_addons,
+            discount_id, discount_name, discount_type, discount_value, discount_amount_cents
        FROM local_history
       WHERE owner_id = ? AND sync_status = 'pending'
       ORDER BY created_at
@@ -159,15 +167,64 @@ export async function markSalesSynced(ownerId: string, uuids: string[]): Promise
 export async function getLocalSalesHistory(ownerId: string): Promise<LocalSale[]> {
   const db = await getDatabase();
   return db.getAllAsync<LocalSale>(
-    `SELECT h.uuid, COALESCE(p.name, 'Produk') AS product_name, h.sold_quantity,
+    `SELECT h.uuid, h.product_id, COALESCE(p.name, 'Produk') AS product_name, h.sold_quantity,
             h.price_cents, h.created_at, h.sync_status, h.payment_method,
             COALESCE(h.transaction_uuid, h.uuid) AS transaction_uuid,
             h.transaction_total_cents, h.amount_paid_cents, h.change_cents, h.note,
-            h.raw_material_addons
+            h.raw_material_addons, h.discount_id, h.discount_name, h.discount_type,
+            h.discount_value, h.discount_amount_cents
        FROM local_history h
        LEFT JOIN local_products p ON p.server_id = h.product_id AND p.owner_id = h.owner_id
       WHERE h.owner_id = ?
       ORDER BY h.created_at DESC`,
     ownerId,
   );
+}
+
+export async function editPendingTransaction(
+  ownerId: string,
+  transactionUuid: string,
+  quantities: Record<number, number>,
+  discount: { id: number; name: string; type: 'percent' | 'fixed'; value: number } | null,
+) {
+  const db = await getDatabase();
+  await db.withExclusiveTransactionAsync(async (transaction) => {
+    const rows = await transaction.getAllAsync<LocalSale & { product_id: number }>(
+      `SELECT *, product_id FROM local_history WHERE owner_id=? AND transaction_uuid=? ORDER BY created_at`,
+      ownerId, transactionUuid,
+    );
+    if (!rows.length) throw new Error('Transaksi tidak ditemukan');
+    if (rows.some((row) => row.sync_status !== 'pending')) throw new Error('Transaksi yang sudah tersinkron belum dapat diedit');
+    const selected = rows.filter((row) => Number.isInteger(quantities[row.product_id]) && quantities[row.product_id] > 0);
+    if (!selected.length) throw new Error('Minimal satu produk harus tersisa');
+    const now = new Date().toISOString();
+    for (const row of rows) await transaction.runAsync(
+      `UPDATE local_products SET stock=stock+?, updated_at=? WHERE server_id=? AND owner_id=? AND product_kind='produk_jadi'`,
+      row.sold_quantity, now, row.product_id, ownerId,
+    );
+    let subtotalCents = 0;
+    for (const row of selected) {
+      const quantity = quantities[row.product_id];
+      const changed = await transaction.runAsync(
+        `UPDATE local_products SET stock=stock-?, updated_at=? WHERE server_id=? AND owner_id=? AND is_active=1 AND product_kind='produk_jadi' AND stock>=?`,
+        quantity, now, row.product_id, ownerId, quantity,
+      );
+      if (changed.changes !== 1) throw new Error(`Stok ${row.product_name} tidak mencukupi`);
+      subtotalCents += row.price_cents * quantity;
+    }
+    const discountCents = discount ? Math.min(subtotalCents, discount.type === 'percent' ? Math.round(subtotalCents * discount.value / 100) : Math.round(discount.value * 100)) : 0;
+    const totalCents = subtotalCents - discountCents;
+    const first = rows[0];
+    if (first.payment_method === 'tunai' && first.amount_paid_cents < totalCents) throw new Error('Uang yang dibayar tidak cukup untuk total hasil edit');
+    const paidCents = first.payment_method === 'tunai' ? first.amount_paid_cents : totalCents;
+    const changeCents = first.payment_method === 'tunai' ? paidCents - totalCents : 0;
+    await transaction.runAsync(`DELETE FROM local_history WHERE owner_id=? AND transaction_uuid=?`, ownerId, transactionUuid);
+    for (const row of selected) await transaction.runAsync(
+      `INSERT INTO local_history(uuid,product_id,sold_quantity,price_cents,created_at,note,sync_status,owner_id,transaction_uuid,payment_method,amount_paid_cents,change_cents,transaction_total_cents,raw_material_addons,discount_id,discount_name,discount_type,discount_value,discount_amount_cents)
+       VALUES(?,?,?,?,?,?,'pending',?,?,?,?,?,?,?,?,?,?,?,?)`,
+      Crypto.randomUUID(), row.product_id, quantities[row.product_id], row.price_cents, first.created_at, first.note, ownerId, transactionUuid,
+      first.payment_method, paidCents, changeCents, totalCents, first.raw_material_addons,
+      discount?.id ?? null, discount?.name ?? null, discount?.type ?? null, discount?.value ?? 0, discountCents,
+    );
+  });
 }

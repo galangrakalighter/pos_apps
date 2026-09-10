@@ -13,7 +13,7 @@ export class HistorySyncService {
     // uuid is globally unique. The ownership composite FK prevents tenant leakage.
     const values: unknown[] = [];
     const rows = items.map((item, index) => {
-      const offset = index * 13;
+      const offset = index * 18;
       values.push(
         item.uuid,
         mitraId,
@@ -28,12 +28,18 @@ export class HistorySyncService {
         item.changeAmount ?? '0.00',
         item.transactionTotal ?? (Number(item.price) * item.soldQuantity).toFixed(2),
         JSON.stringify(item.rawMaterialAddons ?? []),
+        item.discountId ?? null,
+        item.discountName ?? null,
+        item.discountType ?? null,
+        item.discountValue ?? '0',
+        item.discountAmount ?? '0',
       );
       return `($${offset + 1}::uuid, $${offset + 2}::uuid, $${offset + 3}::bigint,
         $${offset + 4}::integer, $${offset + 5}::numeric, $${offset + 6}::timestamptz,
         $${offset + 7}::text, $${offset + 8}::uuid, $${offset + 9}::varchar,
         $${offset + 10}::numeric, $${offset + 11}::numeric, $${offset + 12}::numeric,
-        $${offset + 13}::jsonb)`;
+        $${offset + 13}::jsonb, $${offset + 14}::bigint, $${offset + 15}::varchar,
+        $${offset + 16}::varchar, $${offset + 17}::numeric, $${offset + 18}::numeric)`;
     });
 
     await this.dataSource.transaction(async (manager) => {
@@ -50,7 +56,7 @@ export class HistorySyncService {
         `INSERT INTO history
           (uuid, mitra_id, id_produk, terjual, harga, created_at, keterangan,
            transaction_uuid, payment_method, amount_paid, change_amount, transaction_total,
-           raw_material_addons)
+           raw_material_addons, discount_id, discount_name, discount_type, discount_value, discount_amount)
          VALUES ${rows.join(',')}
          ON CONFLICT (uuid) DO NOTHING
          RETURNING uuid::text, id_produk::text AS product_id, terjual`,

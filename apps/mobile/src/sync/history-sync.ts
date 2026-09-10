@@ -48,6 +48,11 @@ async function performSync(session: SyncSession): Promise<void> {
             try { return JSON.parse(sale.raw_material_addons || '[]') as Array<{ productId: number; name: string }>; }
             catch { return []; }
           })().map((item) => ({ productId: String(item.productId), name: item.name })),
+          discountId: sale.discount_id ? String(sale.discount_id) : undefined,
+          discountName: sale.discount_name ?? undefined,
+          discountType: sale.discount_type ?? undefined,
+          discountValue: sale.discount_value ? String(sale.discount_value) : undefined,
+          discountAmount: centsToDecimal(sale.discount_amount_cents),
         })),
       }),
     });

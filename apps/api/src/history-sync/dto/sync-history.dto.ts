@@ -33,6 +33,11 @@ export class HistoryItemDto {
   @IsOptional() @IsNumberString() transactionTotal?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => RawMaterialAddonDto)
   rawMaterialAddons?: RawMaterialAddonDto[];
+  @IsOptional() @IsNumberString() discountId?: string;
+  @IsOptional() @IsString() @MaxLength(150) discountName?: string;
+  @IsOptional() @IsIn(['percent', 'fixed']) discountType?: string;
+  @IsOptional() @IsNumberString() discountValue?: string;
+  @IsOptional() @IsNumberString() discountAmount?: string;
 }
 
 export class SyncHistoryDto {

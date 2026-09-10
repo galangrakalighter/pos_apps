@@ -5,6 +5,7 @@ import { Session } from '../types';
 export interface UserProfile {
   id: string; username: string; partnerName: string; region: string | null; isPusat: boolean; profileImageUrl?: string | null;
 }
+export interface CentralPaymentSettings { qrisImageUrl: string | null; whatsappNumber: string | null; }
 
 export const profileImageUri = (path?: string | null) => path
   ? (path.startsWith('http://') || path.startsWith('https://') ? path : `${API_URL.replace(/\/api\/v1\/?$/, '')}${path}`)
@@ -25,6 +26,20 @@ async function request<T>(path: string, session: Session, init?: RequestInit): P
 
 export function getOwnProfile(session: Session) {
   return request<UserProfile>('/profile', session);
+}
+
+export function getCentralPayment(session: Session) { return request<CentralPaymentSettings>('/central-payment', session); }
+export function updateCentralWhatsApp(session: Session, whatsappNumber: string) {
+  return request<CentralPaymentSettings>('/central-payment', session, { method: 'PATCH', body: JSON.stringify({ whatsappNumber }) });
+}
+export async function uploadCentralQris(session: Session, asset: { uri: string; mimeType?: string | null; fileName?: string | null }) {
+  const form = new FormData();
+  const extension = asset.mimeType === 'image/png' ? 'png' : asset.mimeType === 'image/webp' ? 'webp' : 'jpg';
+  form.append('image', { uri: asset.uri, name: asset.fileName || `qris-pusat.${extension}`, type: asset.mimeType || 'image/jpeg' } as unknown as Blob);
+  const response = await fetch(`${API_URL}/central-payment/qris`, { method: 'POST', headers: { Authorization: `Bearer ${session.accessToken}` }, body: form });
+  const payload = await response.json().catch(() => null) as CentralPaymentSettings | { message?: string | string[] } | null;
+  if (!response.ok) { const detail = payload && 'message' in payload ? payload.message : undefined; throw new Error(Array.isArray(detail) ? detail[0] : detail || `Upload QRIS gagal (${response.status})`); }
+  return payload as CentralPaymentSettings;
 }
 
 export async function updateOwnProfile(

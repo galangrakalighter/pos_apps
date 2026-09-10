@@ -8,7 +8,7 @@ const partnerItems: Array<{ id: ScreenName; label: string; icon: IconName }> = [
   { id: 'pos', label: 'Kasir', icon: 'point-of-sale' }, { id: 'history', label: 'Riwayat', icon: 'receipt-text-clock-outline' }, { id: 'inventory', label: 'Stok', icon: 'package-variant-closed' }, { id: 'orders', label: 'Pesanan', icon: 'truck-delivery-outline' }, { id: 'profile', label: 'Profil', icon: 'account-circle-outline' },
 ];
 const adminItems: Array<{ id: ScreenName; label: string; icon: IconName }> = [
-  { id: 'adminSales', label: 'Monitoring', icon: 'chart-box-outline' }, { id: 'adminOrders', label: 'Order Masuk', icon: 'inbox-arrow-down-outline' }, { id: 'adminAccounts', label: 'Manajemen Mitra', icon: 'store-cog-outline' }, { id: 'inventory', label: 'Gudang', icon: 'warehouse' }, { id: 'profile', label: 'Profil', icon: 'account-circle-outline' },
+  { id: 'adminSales', label: 'Monitoring', icon: 'chart-box-outline' }, { id: 'adminOrders', label: 'Order Masuk', icon: 'inbox-arrow-down-outline' }, { id: 'adminAccounts', label: 'Mitra', icon: 'store-cog-outline' }, { id: 'inventory', label: 'Gudang', icon: 'warehouse' }, { id: 'adminDiscounts', label: 'Diskon', icon: 'sale-outline' }, { id: 'profile', label: 'Profil', icon: 'account-circle-outline' },
 ];
 
 export function AppNavigation({ active, onChange, isTablet, session, onLogout }: { active: ScreenName; onChange: (screen: ScreenName) => void; isTablet: boolean; session: Session; onLogout: () => void }) {

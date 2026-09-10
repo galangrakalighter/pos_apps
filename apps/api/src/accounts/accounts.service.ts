@@ -30,7 +30,7 @@ export class AccountsService {
         const ids = [...seen].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
         const warehouse: Array<{ id: string; itemName: string; stock: number; centralPrice: string; unit: string }> = await manager.query(
           `SELECT id::text, nama_bumbu AS "itemName", stock::float8 AS stock, harga::text AS "centralPrice", satuan AS unit FROM warehouse
-            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' ORDER BY id FOR UPDATE`, [ids],
+            WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY id FOR UPDATE`, [ids],
         );
         if (warehouse.length !== ids.length) throw new BadRequestException('Barang gudang tidak ditemukan');
         const byId = new Map(inputs.map((item) => [item.warehouseId, item]));
@@ -221,6 +221,45 @@ export class AccountsService {
     const profile = this.resultRows<UserProfileRow>(result)[0];
     if (!profile) throw new UnauthorizedException('User tidak ditemukan');
     return profile;
+  }
+
+  async getCentralPayment(_user: AuthenticatedUser) {
+    const rows: Array<{ qrisImageUrl: string | null; whatsappNumber: string | null }> = await this.dataSource.query(
+      `SELECT central_qris_image_url AS "qrisImageUrl", whatsapp_number AS "whatsappNumber"
+         FROM users WHERE "isPusat" = TRUE ORDER BY id LIMIT 1`,
+    );
+    return rows[0] ?? { qrisImageUrl: null, whatsappNumber: null };
+  }
+
+  async updateCentralWhatsApp(user: AuthenticatedUser, whatsappNumber: string) {
+    if (!user.isPusat) throw new ForbiddenException('Hanya akun Pusat yang dapat mengubah pembayaran pusat');
+    const normalized = String(whatsappNumber ?? '').replace(/[^0-9]/g, '');
+    if (normalized.length < 8 || normalized.length > 20) throw new BadRequestException('Nomor WhatsApp tidak valid');
+    await this.dataSource.query(`UPDATE users SET whatsapp_number = $1 WHERE id = $2::uuid`, [normalized, user.id]);
+    return this.getCentralPayment(user);
+  }
+
+  async saveCentralQris(user: AuthenticatedUser, file?: { buffer: Buffer; mimetype: string; originalname: string }) {
+    if (!user.isPusat) throw new ForbiddenException('Hanya akun Pusat yang dapat mengubah QRIS pusat');
+    if (!file) throw new BadRequestException('Pilih gambar QRIS terlebih dahulu');
+    const extensions: Record<string, string> = { 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+    const extension = extensions[file.mimetype];
+    if (!extension) throw new BadRequestException('Format QRIS harus JPG, PNG, atau WebP');
+    const filename = `${user.id}-${randomUUID()}.${extension}`;
+    const directory = join(process.cwd(), 'uploads', 'central-qris');
+    await mkdir(directory, { recursive: true });
+    await writeFile(join(directory, filename), file.buffer);
+    await this.dataSource.query(`UPDATE users SET central_qris_image_url = $1 WHERE id = $2::uuid`, [`/api/v1/central-payment/images/${filename}`, user.id]);
+    return this.getCentralPayment(user);
+  }
+
+  async centralQrisImage(filename: string) {
+    if (!/^[a-f0-9-]+\.(jpg|png|webp)$/i.test(filename)) throw new NotFoundException('QRIS pusat tidak ditemukan');
+    try {
+      const data = await readFile(join(process.cwd(), 'uploads', 'central-qris', filename));
+      const type = filename.endsWith('.png') ? 'image/png' : filename.endsWith('.webp') ? 'image/webp' : 'image/jpeg';
+      return new StreamableFile(data, { type });
+    } catch { throw new NotFoundException('QRIS pusat tidak ditemukan'); }
   }
 
   async profileImage(filename: string) {
