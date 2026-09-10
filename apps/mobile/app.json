@@ -11,6 +11,7 @@
     ],
     "android": {
       "package": "com.posapps.mitra",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",

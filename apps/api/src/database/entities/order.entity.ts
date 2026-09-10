@@ -16,6 +16,8 @@ export class Order {
   @Column({ type: 'enum', enum: OrderStatus }) status!: OrderStatus;
   @Column({ name: 'total_amount', type: 'numeric', precision: 18, scale: 2 }) totalAmount!: string;
   @Column({ name: 'payment_method', type: 'varchar', length: 10, default: 'tunai' }) paymentMethod!: 'tunai' | 'qris';
+  @Column({ name: 'is_finalized', type: 'boolean', default: false }) isFinalized!: boolean;
+  @Column({ name: 'finalized_at', type: 'timestamptz', nullable: true }) finalizedAt!: Date | null;
   @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
   @Column({ name: 'updated_at', type: 'timestamptz' }) updatedAt!: Date;
   @Column({ name: 'stock_applied_at', type: 'timestamptz', nullable: true }) stockAppliedAt!: Date | null;

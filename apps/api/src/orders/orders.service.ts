@@ -88,11 +88,12 @@ export class OrdersService {
     }
     const ids = [...requestedItems.keys()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
     return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const locked: Array<{ status: OrderStatus; pemesan_id: string }> = await manager.query(
-        `SELECT status, pemesan_id::text FROM orders WHERE id = $1::bigint FOR UPDATE`, [orderId],
+      const locked: Array<{ status: OrderStatus; pemesan_id: string; is_finalized: boolean }> = await manager.query(
+        `SELECT status, pemesan_id::text, is_finalized FROM orders WHERE id = $1::bigint FOR UPDATE`, [orderId],
       );
       if (!locked[0] || locked[0].pemesan_id !== requesterId) throw new NotFoundException('Pesanan tidak ditemukan');
       if (locked[0].status !== OrderStatus.PENDING) throw new ConflictException('Pesanan hanya dapat diedit selama masih pending');
+      if (locked[0].is_finalized) throw new ConflictException('Pesanan sudah difix dan tidak dapat diedit');
       const products: Array<{ id: string; name: string; price: string; unit: string; available: boolean }> = await manager.query(
         `SELECT id::text, nama_bumbu AS name, harga::text AS price, satuan AS unit, is_available AS available
            FROM warehouse WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY id`, [ids],
@@ -120,6 +121,16 @@ export class OrdersService {
       await manager.query(`UPDATE orders SET total_amount = $1::numeric, payment_method = $2, updated_at = now() WHERE id = $3::bigint`, [total, dto.paymentMethod, orderId]);
       return manager.findOneOrFail(Order, { where: { id: orderId }, relations: { items: true } });
     });
+  }
+
+  async finalize(requesterId: string, orderId: string): Promise<Order> {
+    const rows = await this.dataSource.query(
+      `UPDATE orders SET is_finalized = TRUE, finalized_at = now(), updated_at = now()
+        WHERE id = $1::bigint AND pemesan_id = $2::uuid AND status = 'pending' AND is_finalized = FALSE
+        RETURNING id::text`, [orderId, requesterId],
+    );
+    if (!this.resultRows<{ id: string }>(rows).length) throw new ConflictException('Pesanan tidak dapat difix atau sudah terkunci');
+    return this.dataSource.getRepository(Order).findOneOrFail({ where: { id: orderId }, relations: { items: true } });
   }
 
   async incoming(adminId: string): Promise<Array<Order & { requesterUsername: string }>> {
@@ -154,9 +165,9 @@ export class OrdersService {
     await this.assertCentralAdmin(adminId);
     let requesterId = '';
     const saved = await this.dataSource.transaction('SERIALIZABLE', async (manager) => {
-      const locked: Array<{ id: string; pemesan_id: string; pemberi_id: string; status: OrderStatus; stock_applied_at: Date | null }> =
+      const locked: Array<{ id: string; pemesan_id: string; pemberi_id: string; status: OrderStatus; stock_applied_at: Date | null; is_finalized: boolean }> =
         await manager.query(
-          `SELECT id::text, pemesan_id::text, pemberi_id::text, status, stock_applied_at
+          `SELECT id::text, pemesan_id::text, pemberi_id::text, status, stock_applied_at, is_finalized
              FROM orders
             WHERE id = $1::bigint
             FOR UPDATE`,
@@ -165,6 +176,7 @@ export class OrdersService {
       const order = locked[0];
       if (!order) throw new NotFoundException('Order not found');
       if (order.pemberi_id !== adminId) throw new ForbiddenException('Order is not assigned to this central admin');
+      if (order.status === OrderStatus.PENDING && !order.is_finalized) throw new ConflictException('Mitra belum menekan Pesanan sudah fix');
       requesterId = order.pemesan_id;
 
       // Retrying the same request is harmless and never decrements stock again.

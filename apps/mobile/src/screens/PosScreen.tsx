@@ -11,11 +11,14 @@ import { getLocalQrisImage } from '../payments/local-qris';
 import { Discount, getLocalDiscounts, syncDiscounts } from '../discounts/discounts-api';
 import { printReceipt } from '../printing/receipt-printer';
 
+const cartDrafts = new Map<string, CartItem[]>();
+const addonDrafts = new Map<string, Record<number, number[]>>();
+
 export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSaved }: { isTablet: boolean; session: Session; refreshKey?: number; onTransactionSaved: () => void }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [rawMaterials, setRawMaterials] = useState<Product[]>([]);
-  const [cart, setCart] = useState<CartItem[]>([]);
-  const [selectedAddons, setSelectedAddons] = useState<Record<number, number[]>>({});
+  const [cart, setCart] = useState<CartItem[]>(() => cartDrafts.get(session.mitraId) ?? []);
+  const [selectedAddons, setSelectedAddons] = useState<Record<number, number[]>>(() => addonDrafts.get(session.mitraId) ?? {});
   const [query, setQuery] = useState('');
   const [category, setCategory] = useState('Semua');
   const [showCart, setShowCart] = useState(false);
@@ -25,8 +28,6 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
   const [discounts, setDiscounts] = useState<Discount[]>([]);
 
   useEffect(() => {
-    setCart([]);
-    setSelectedAddons({});
     const load = async () => {
       await ensureLocalPartnerProducts(session).catch(() => undefined);
       setProducts(await getLocalProducts(session.mitraId, 'produk_jadi'));
@@ -37,6 +38,8 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
     };
     void load();
   }, [session.accessToken, session.mitraId, refreshKey]);
+  useEffect(() => { cartDrafts.set(session.mitraId, cart); }, [cart, session.mitraId]);
+  useEffect(() => { addonDrafts.set(session.mitraId, selectedAddons); }, [selectedAddons, session.mitraId]);
 
   const categories = useMemo(() => ['Semua', ...Array.from(new Set(products.map((item) => item.category)))], [products]);
   const filtered = useMemo(() => products.filter((item) => (category === 'Semua' || item.category === category) && item.name.toLowerCase().includes(query.toLowerCase())), [products, category, query]);
@@ -57,13 +60,13 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
   const checkout = async (method: PaymentMethod, amountPaid: number, note: string, discount: Discount | null) => {
     setPaying(true);
     try {
-      const purchasedItems = cart.map((item) => ({ name: item.name, quantity: item.quantity, priceCents: Math.round(item.price * 100), addons: rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => raw.name) }));
+      const purchasedItems = cart.map((item) => ({ name: item.name, quantity: item.quantity, priceCents: Math.round(item.price * 100), addons: item.category.trim().toLowerCase() === 'bumbu tabur' ? rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => raw.name) : [] }));
       const result = await recordTransaction(
         session.mitraId,
         cart.map((item) => ({ productId: item.id, quantity: item.quantity })),
         {
           method, amountPaidCents: Math.round(amountPaid * 100), note: note.trim() || undefined,
-          rawMaterialAddonsByProduct: Object.fromEntries(cart.map((item) => [item.id, rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => ({ productId: raw.id, name: raw.name }))])),
+          rawMaterialAddonsByProduct: Object.fromEntries(cart.map((item) => [item.id, item.category.trim().toLowerCase() === 'bumbu tabur' ? rawMaterials.filter((raw) => (selectedAddons[item.id] ?? []).includes(raw.id)).map((raw) => ({ productId: raw.id, name: raw.name })) : []])),
           discount,
         },
       );
@@ -97,7 +100,7 @@ export function PosScreen({ isTablet, session, refreshKey = 0, onTransactionSave
       <View style={styles.catalog}>
         <View style={styles.toolbar}><TextInput value={query} onChangeText={setQuery} placeholder="Cari produk..." placeholderTextColor="#98A2B3" style={styles.search} /></View>
         <View style={styles.categories}>{categories.map((item) => <Pressable key={item} onPress={() => setCategory(item)} style={[styles.chip, category === item && styles.activeChip]}><Text style={[styles.chipText, category === item && styles.activeChipText]}>{item}</Text></Pressable>)}</View>
-        <FlatList data={filtered} key={isTablet ? 'tablet' : 'phone'} keyExtractor={(item) => String(item.id)} numColumns={isTablet ? 3 : 2} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.grid} ListEmptyComponent={<Text style={styles.empty}>Belum ada produk. Hubungkan internet untuk menyinkronkan stok dari pusat.</Text>} renderItem={({ item }) => <ProductCard product={item} onAdd={add} compact={!isTablet} />} />
+        <FlatList data={filtered} key={isTablet ? 'tablet' : 'phone'} keyExtractor={(item) => String(item.id)} numColumns={isTablet ? 3 : 2} columnWrapperStyle={styles.gridRow} contentContainerStyle={styles.grid} ListEmptyComponent={<Text style={styles.empty}>Belum ada produk. Hubungkan internet untuk menyinkronkan stok dari pusat.</Text>} renderItem={({ item }) => <ProductCard product={item} onAdd={add} compact={!isTablet} selectedQuantity={cart.find((line) => line.id === item.id)?.quantity ?? 0} />} />
         {!isTablet && <Pressable disabled={!cart.length} onPress={() => setShowCart(true)} style={[styles.floatingCart, !cart.length && { opacity: .5 }]}><Text style={styles.floatingText}>Keranjang · {itemCount} item · {rupiah(total)}</Text></Pressable>}
       </View>
       {isTablet && <View style={styles.cartColumn}>{cartPanel}</View>}

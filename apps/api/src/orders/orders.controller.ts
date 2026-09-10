@@ -43,4 +43,9 @@ export class OrdersController {
   ) {
     return this.service.updatePending(user.id, String(id), dto);
   }
+
+  @Patch(':id/finalize')
+  finalize(@CurrentUser() user: AuthenticatedUser, @Param('id', ParseIntPipe) id: number) {
+    return this.service.finalize(user.id, String(id));
+  }
 }

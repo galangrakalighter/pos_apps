@@ -12,6 +12,7 @@ export interface RemoteOrder {
   totalAmount: string; createdAt: string; updatedAt: string; items: RemoteOrderItem[];
   requesterUsername?: string;
   paymentMethod: 'tunai' | 'qris';
+  isFinalized: boolean; finalizedAt?: string | null;
 }
 
 async function orderRequest<T>(session: Session, path: string, init?: RequestInit): Promise<T> {
@@ -45,3 +46,6 @@ export async function createProcurementOrder(session: Session, items: Procuremen
 
 export const updatePendingProcurementOrder = (session: Session, orderId: string, items: ProcurementLine[], paymentMethod: 'tunai' | 'qris') =>
   orderRequest<RemoteOrder>(session, `/${orderId}`, { method: 'PATCH', body: JSON.stringify({ paymentMethod, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity, unit: item.unit })) }) });
+
+export const finalizeProcurementOrder = (session: Session, orderId: string) =>
+  orderRequest<RemoteOrder>(session, `/${orderId}/finalize`, { method: 'PATCH' });
