@@ -17,7 +17,8 @@ const PAPER_COLUMNS = 28;
 let connectedPrinter: BluetoothDevice | null = null;
 
 const money = (cents: number) => `Rp${Math.round(cents / 100).toLocaleString('id-ID')}`;
-const plain = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, ' ');
+// Pertahankan CR/LF karena keduanya merupakan kontrol pindah baris printer.
+const plain = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E\r\n]/g, ' ');
 const fit = (value: string, width: number) => plain(value).slice(0, width);
 const columns = (left: string, right: string) => {
   const safeRight = fit(right, PAPER_COLUMNS - 1);
@@ -46,9 +47,9 @@ async function resolvePrinter(): Promise<BluetoothDevice> {
   const paired = await bluetooth.getBondedDevices();
   const savedAddress = await SecureStore.getItemAsync(PRINTER_ADDRESS_KEY);
   const printer = paired.find((device) => device.address === savedAddress)
-    ?? paired.find((device) => /inner\s*printer/i.test(device.name || ''))
+    ?? paired.find((device) => /iware|inner\s*printer/i.test(device.name || ''))
     ?? paired.find((device) => /printer|pos|thermal/i.test(device.name || ''));
-  if (!printer) throw new Error('InnerPrinter belum dipasangkan. Pasangkan printer melalui pengaturan Bluetooth Android terlebih dahulu.');
+  if (!printer) throw new Error('Printer iWare belum dipasangkan. Pasangkan printer melalui pengaturan Bluetooth Android terlebih dahulu.');
 
   if (!await printer.isConnected().catch(() => false)) {
     const options = { connectorType: 'rfcomm', connectionType: 'delimited', charset: 'ISO-8859-1' };
@@ -65,7 +66,9 @@ function receiptBytes(receipt: ReceiptData) {
   const subtotal = receipt.items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
   const parts: Buffer[] = [];
   const command = (...bytes: number[]) => parts.push(Buffer.from(bytes));
-  const text = (value: string) => parts.push(Buffer.from(plain(value), 'latin1'));
+  // Printer thermal iWare membutuhkan CRLF. Jika hanya LF, teks berikutnya
+  // tetap dicetak pada baris yang sama dan susunan struk menjadi bertabrakan.
+  const text = (value: string) => parts.push(Buffer.from(plain(value).replace(/\r?\n/g, '\r\n'), 'latin1'));
 
   command(0x1b, 0x40); command(0x1b, 0x32); command(0x1b, 0x4d, 0x00);
   command(0x1b, 0x61, 0x01);
