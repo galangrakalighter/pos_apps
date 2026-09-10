@@ -68,11 +68,12 @@ function receiptBytes(receipt: ReceiptData) {
   const text = (value: string) => parts.push(Buffer.from(plain(value), 'latin1'));
 
   command(0x1b, 0x40); command(0x1b, 0x32); command(0x1b, 0x4d, 0x00);
-  command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text(`${fit(receipt.merchantName || 'POS MITRA', PAPER_COLUMNS)}\n`);
-  command(0x1b, 0x45, 0x00); text('BUKTI PEMBAYARAN\n'); command(0x1b, 0x61, 0x00);
-  text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
-  text(columns('No.', receipt.id.slice(0, 8).toUpperCase()));
-  text('Tanggal\n'); text(`${fit(new Date(receipt.createdAt).toLocaleString('id-ID'), PAPER_COLUMNS)}\n`);
+  command(0x1b, 0x61, 0x01);
+  command(0x1b, 0x21, 0x30); text('CHIMINRO\n'); command(0x1b, 0x21, 0x00);
+  command(0x1b, 0x61, 0x00);
+  text(`${'='.repeat(PAPER_COLUMNS)}\n`);
+  text(columns('No. Struk', receipt.id.slice(0, 8).toUpperCase()));
+  text(columns('Tanggal', new Date(receipt.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })));
   text(columns('Kasir', receipt.cashierName)); text(columns('Metode', receipt.paymentMethod));
   text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
   for (const item of receipt.items) {
@@ -85,8 +86,8 @@ function receiptBytes(receipt: ReceiptData) {
   command(0x1b, 0x45, 0x01); text(columns('TOTAL', money(receipt.totalCents))); command(0x1b, 0x45, 0x00);
   text(columns('Dibayar', money(receipt.amountPaidCents))); text(columns('Kembali', money(receipt.changeCents)));
   if (receipt.note && receipt.note !== 'Transaksi POS') text(`Catatan: ${fit(receipt.note, PAPER_COLUMNS - 9)}\n`);
-  text(`${'-'.repeat(PAPER_COLUMNS)}\n`); command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text('Terima kasih\n');
-  command(0x1b, 0x45, 0x00); text('\n\n\n'); command(0x1d, 0x56, 0x00);
+  text(`${'='.repeat(PAPER_COLUMNS)}\n`); command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text('Terima kasih\n');
+  command(0x1b, 0x45, 0x00); text('Simpan struk sebagai bukti.\n\n\n'); command(0x1d, 0x56, 0x00);
   return Buffer.concat(parts);
 }
 
