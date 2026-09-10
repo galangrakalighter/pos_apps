@@ -9,12 +9,27 @@ type ServerRecipe = { ingredientProductId: string | null; quantityRequired: numb
 type ServerProduct = { id: string; name: string; stock: number; price: string; category: string; kind: 'bahan_baku' | 'produk_jadi'; unit: string | null; recipeComplete: boolean; recipes?: ServerRecipe[]; imageUrl: string | null; updatedAt: string };
 const absoluteImage = (path: string | null) => path ? `${API_URL.replace(/\/api\/v1\/?$/, '')}${path}` : null;
 
+function isServerProduct(value: unknown): value is ServerProduct {
+  if (!value || typeof value !== 'object') return false;
+  const item = value as Partial<ServerProduct>;
+  return Number.isSafeInteger(Number(item.id))
+    && typeof item.name === 'string'
+    && Number.isFinite(Number(item.stock))
+    && Number.isFinite(Number(item.price))
+    && (item.kind === 'bahan_baku' || item.kind === 'produk_jadi');
+}
+
 export async function syncPartnerProducts(session: Session) {
   const network = await NetInfo.fetch();
   if (!network.isConnected || network.isInternetReachable === false) return;
   const response = await fetch(`${API_URL}/products/mine`, { headers: { Authorization: `Bearer ${session.accessToken}` } });
   if (!response.ok) throw new Error(`Sinkronisasi produk gagal (${response.status})`);
-  const products = await response.json() as ServerProduct[];
+  const payload: unknown = await response.json();
+  if (!Array.isArray(payload)) throw new Error('Format katalog produk dari server tidak valid');
+  const products = payload.filter(isServerProduct);
+  if (products.length !== payload.length) {
+    throw new Error('Sebagian data produk dari server tidak valid. Data lokal tetap dipertahankan.');
+  }
   const db = await getDatabase();
   await db.withTransactionAsync(async () => {
     await db.runAsync(`UPDATE local_products SET is_active = 0 WHERE owner_id = ?`, session.mitraId);
