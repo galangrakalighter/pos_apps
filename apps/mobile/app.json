@@ -11,6 +11,11 @@
     ],
     "android": {
       "package": "com.posapps.mitra",
+      "permissions": [
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.BLUETOOTH_CONNECT"
+      ],
       "adaptiveIcon": {
         "foregroundImage": "./assets/pos-adaptive-icon.png",
         "backgroundColor": "#E3792F"

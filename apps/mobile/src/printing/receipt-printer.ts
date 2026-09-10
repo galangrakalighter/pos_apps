@@ -1,70 +1,94 @@
-import * as Print from 'expo-print';
+import { PermissionsAndroid, Platform } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+import { Buffer } from 'buffer';
+import type { BluetoothDevice } from 'react-native-bluetooth-classic';
 
-export interface ReceiptLine {
-  name: string;
-  quantity: number;
-  priceCents: number;
-  addons?: string[];
-}
-
+export interface ReceiptLine { name: string; quantity: number; priceCents: number; addons?: string[]; }
 export interface ReceiptData {
-  id: string;
-  merchantName: string;
-  cashierName: string;
-  createdAt: string;
-  paymentMethod: string;
-  items: ReceiptLine[];
-  totalCents: number;
-  amountPaidCents: number;
-  changeCents: number;
-  discountName?: string | null;
-  discountAmountCents?: number;
-  note?: string | null;
+  id: string; merchantName: string; cashierName: string; createdAt: string; paymentMethod: string;
+  items: ReceiptLine[]; totalCents: number; amountPaidCents: number; changeCents: number;
+  discountName?: string | null; discountAmountCents?: number; note?: string | null;
 }
+
+const PRINTER_ADDRESS_KEY = 'pos_direct_printer_address';
+const PAPER_COLUMNS = 32;
+let connectedPrinter: BluetoothDevice | null = null;
 
 const money = (cents: number) => `Rp${Math.round(cents / 100).toLocaleString('id-ID')}`;
-const escapeHtml = (value: string) => value.replace(/[&<>"']/g, (character) => ({
-  '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;',
-}[character] ?? character));
+const plain = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^\x20-\x7E]/g, ' ');
+const fit = (value: string, width: number) => plain(value).slice(0, width);
+const columns = (left: string, right: string) => {
+  const safeRight = fit(right, PAPER_COLUMNS - 1);
+  const safeLeft = fit(left, Math.max(1, PAPER_COLUMNS - safeRight.length - 1));
+  return `${safeLeft}${' '.repeat(Math.max(1, PAPER_COLUMNS - safeLeft.length - safeRight.length))}${safeRight}\n`;
+};
+
+async function requestBluetoothPermission() {
+  if (Platform.OS !== 'android') throw new Error('Cetak Bluetooth langsung hanya tersedia di Android');
+  if (Number(Platform.Version) < 31) return;
+  const granted = await PermissionsAndroid.request(PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT, {
+    title: 'Izin printer Bluetooth',
+    message: 'POS Mitra membutuhkan akses ke printer Bluetooth yang sudah dipasangkan.',
+    buttonPositive: 'Izinkan', buttonNegative: 'Batal',
+  });
+  if (granted !== PermissionsAndroid.RESULTS.GRANTED) throw new Error('Izin koneksi Bluetooth belum diberikan');
+}
+
+async function resolvePrinter(): Promise<BluetoothDevice> {
+  await requestBluetoothPermission();
+  const { default: bluetooth } = await import('react-native-bluetooth-classic');
+  if (!await bluetooth.isBluetoothAvailable()) throw new Error('Perangkat ini tidak mendukung Bluetooth');
+  if (!await bluetooth.isBluetoothEnabled() && !await bluetooth.requestBluetoothEnabled()) throw new Error('Aktifkan Bluetooth untuk mencetak struk');
+  if (connectedPrinter && await connectedPrinter.isConnected().catch(() => false)) return connectedPrinter;
+
+  const paired = await bluetooth.getBondedDevices();
+  const savedAddress = await SecureStore.getItemAsync(PRINTER_ADDRESS_KEY);
+  const printer = paired.find((device) => device.address === savedAddress)
+    ?? paired.find((device) => /inner\s*printer/i.test(device.name || ''))
+    ?? paired.find((device) => /printer|pos|thermal/i.test(device.name || ''));
+  if (!printer) throw new Error('InnerPrinter belum dipasangkan. Pasangkan printer melalui pengaturan Bluetooth Android terlebih dahulu.');
+
+  if (!await printer.isConnected().catch(() => false)) {
+    const options = { connectorType: 'rfcomm', connectionType: 'delimited', charset: 'ISO-8859-1' };
+    const connected = await printer.connect({ ...options, secureSocket: false }).catch(() => false)
+      || await printer.connect({ ...options, secureSocket: true }).catch(() => false);
+    if (!connected) throw new Error(`Tidak dapat terhubung ke ${printer.name || 'printer'}`);
+  }
+  connectedPrinter = printer;
+  await SecureStore.setItemAsync(PRINTER_ADDRESS_KEY, printer.address);
+  return printer;
+}
+
+function receiptBytes(receipt: ReceiptData) {
+  const subtotal = receipt.items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
+  const parts: Buffer[] = [];
+  const command = (...bytes: number[]) => parts.push(Buffer.from(bytes));
+  const text = (value: string) => parts.push(Buffer.from(plain(value), 'latin1'));
+
+  command(0x1b, 0x40);
+  command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text(`${fit(receipt.merchantName || 'POS MITRA', PAPER_COLUMNS)}\n`);
+  command(0x1b, 0x45, 0x00); text('BUKTI PEMBAYARAN\n'); command(0x1b, 0x61, 0x00);
+  text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
+  text(columns('No.', receipt.id.slice(0, 8).toUpperCase()));
+  text(columns('Tanggal', new Date(receipt.createdAt).toLocaleString('id-ID')));
+  text(columns('Kasir', receipt.cashierName)); text(columns('Metode', receipt.paymentMethod));
+  text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
+  for (const item of receipt.items) {
+    command(0x1b, 0x45, 0x01); text(`${fit(item.name, PAPER_COLUMNS)}\n`); command(0x1b, 0x45, 0x00);
+    text(columns(`${item.quantity} x ${money(item.priceCents)}`, money(item.quantity * item.priceCents)));
+    if (item.addons?.length) text(`Add-on: ${fit(item.addons.join(', '), PAPER_COLUMNS - 8)}\n`);
+  }
+  text(`${'-'.repeat(PAPER_COLUMNS)}\n`); text(columns('Subtotal', money(subtotal)));
+  if (receipt.discountAmountCents) text(columns(`Diskon${receipt.discountName ? ` ${receipt.discountName}` : ''}`, `- ${money(receipt.discountAmountCents)}`));
+  command(0x1b, 0x45, 0x01); text(columns('TOTAL', money(receipt.totalCents))); command(0x1b, 0x45, 0x00);
+  text(columns('Dibayar', money(receipt.amountPaidCents))); text(columns('Kembali', money(receipt.changeCents)));
+  if (receipt.note && receipt.note !== 'Transaksi POS') text(`Catatan: ${fit(receipt.note, PAPER_COLUMNS - 9)}\n`);
+  text(`${'-'.repeat(PAPER_COLUMNS)}\n`); command(0x1b, 0x61, 0x01); command(0x1b, 0x45, 0x01); text('Terima kasih\n');
+  command(0x1b, 0x45, 0x00); text('\n\n\n'); command(0x1d, 0x56, 0x00);
+  return Buffer.concat(parts);
+}
 
 export async function printReceipt(receipt: ReceiptData) {
-  const subtotal = receipt.items.reduce((sum, item) => sum + item.priceCents * item.quantity, 0);
-  const rows = receipt.items.map((item) => `
-    <div class="item-name">${escapeHtml(item.name)}</div>
-    <div class="row"><span>${item.quantity} x ${money(item.priceCents)}</span><span>${money(item.quantity * item.priceCents)}</span></div>
-    ${item.addons?.length ? `<div class="small">Add-on: ${item.addons.map(escapeHtml).join(', ')}</div>` : ''}
-  `).join('');
-  const discount = receipt.discountAmountCents
-    ? `<div class="row"><span>Diskon${receipt.discountName ? ` ${escapeHtml(receipt.discountName)}` : ''}</span><span>- ${money(receipt.discountAmountCents)}</span></div>`
-    : '';
-  const note = receipt.note && receipt.note !== 'Transaksi POS'
-    ? `<div class="note">Catatan: ${escapeHtml(receipt.note)}</div>`
-    : '';
-
-  await Print.printAsync({ html: `<!doctype html><html><head><meta charset="utf-8"/><style>
-    @page { size: 58mm auto; margin: 0; }
-    * { box-sizing: border-box; }
-    body { width: 52mm; margin: 0 auto; padding: 3mm 1mm 7mm; font-family: monospace; color: #000; font-size: 10px; }
-    h1 { margin: 0; text-align: center; font-size: 17px; }
-    .center { text-align: center; }
-    .small { font-size: 9px; }
-    .rule { border-top: 1px dashed #000; margin: 7px 0; }
-    .row { display: flex; justify-content: space-between; gap: 8px; margin: 3px 0; }
-    .item-name, .strong { font-weight: 700; }
-    .total { font-size: 13px; font-weight: 700; }
-    .note { margin-top: 7px; font-size: 9px; }
-  </style></head><body>
-    <h1>${escapeHtml(receipt.merchantName || 'POS MITRA')}</h1>
-    <div class="center small">BUKTI PEMBAYARAN</div><div class="rule"></div>
-    <div class="row"><span>No.</span><span>${escapeHtml(receipt.id.slice(0, 8).toUpperCase())}</span></div>
-    <div class="row"><span>Tanggal</span><span>${escapeHtml(new Date(receipt.createdAt).toLocaleString('id-ID'))}</span></div>
-    <div class="row"><span>Kasir</span><span>${escapeHtml(receipt.cashierName)}</span></div>
-    <div class="row"><span>Metode</span><span>${escapeHtml(receipt.paymentMethod)}</span></div>
-    <div class="rule"></div>${rows}<div class="rule"></div>
-    <div class="row"><span>Subtotal</span><span>${money(subtotal)}</span></div>${discount}
-    <div class="row total"><span>TOTAL</span><span>${money(receipt.totalCents)}</span></div>
-    <div class="row"><span>Dibayar</span><span>${money(receipt.amountPaidCents)}</span></div>
-    <div class="row strong"><span>Kembali</span><span>${money(receipt.changeCents)}</span></div>
-    ${note}<div class="rule"></div><div class="center strong">Terima kasih</div>
-  </body></html>` });
+  const printer = await resolvePrinter();
+  if (!await printer.write(receiptBytes(receipt))) throw new Error('Printer menolak data struk');
 }
