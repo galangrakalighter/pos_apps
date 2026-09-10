@@ -50,8 +50,9 @@
         "legacyVisible": "sticky-immersive"
       },
       "eas": {
-        "projectId": "7ad64eca-acc7-4385-8389-59a24d8580ab"
+        "projectId": "09fbff75-4ce1-4d9c-8298-7ad204d73c3d"
       }
-    }
+    },
+    "owner": "lighter-prods-team"
   }
 }
