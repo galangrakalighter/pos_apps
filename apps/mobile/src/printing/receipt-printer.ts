@@ -77,12 +77,11 @@ function receiptBytes(receipt: ReceiptData) {
   text(`${'='.repeat(PAPER_COLUMNS)}\n`);
   text(columns('No. Struk', receipt.id.slice(0, 8).toUpperCase()));
   text(columns('Tanggal', new Date(receipt.createdAt).toLocaleString('id-ID', { dateStyle: 'short', timeStyle: 'short' })));
-  text(columns('Kasir', receipt.cashierName)); text(columns('Metode', receipt.paymentMethod));
+  text(columns('Metode', receipt.paymentMethod));
   text(`${'-'.repeat(PAPER_COLUMNS)}\n`);
   for (const item of receipt.items) {
     command(0x1b, 0x45, 0x01); text(`${fit(item.name, PAPER_COLUMNS)}\n`); command(0x1b, 0x45, 0x00);
     text(columns(`${item.quantity} x ${money(item.priceCents)}`, money(item.quantity * item.priceCents)));
-    if (item.addons?.length) text(`Add-on: ${fit(item.addons.join(', '), PAPER_COLUMNS - 8)}\n`);
   }
   text(`${'-'.repeat(PAPER_COLUMNS)}\n`); text(columns('Subtotal', money(subtotal)));
   if (receipt.discountAmountCents) text(columns(`Diskon${receipt.discountName ? ` ${receipt.discountName}` : ''}`, `- ${money(receipt.discountAmountCents)}`));

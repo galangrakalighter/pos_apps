@@ -15,6 +15,7 @@ export class Order {
   @Column({ name: 'pemberi_id', type: 'uuid' }) pemberiId!: string;
   @Column({ type: 'enum', enum: OrderStatus }) status!: OrderStatus;
   @Column({ name: 'total_amount', type: 'numeric', precision: 18, scale: 2 }) totalAmount!: string;
+  @Column({ name: 'payment_method', type: 'varchar', length: 10, default: 'tunai' }) paymentMethod!: 'tunai' | 'qris';
   @Column({ name: 'created_at', type: 'timestamptz' }) createdAt!: Date;
   @Column({ name: 'updated_at', type: 'timestamptz' }) updatedAt!: Date;
   @Column({ name: 'stock_applied_at', type: 'timestamptz', nullable: true }) stockAppliedAt!: Date | null;

@@ -11,6 +11,7 @@ export interface RemoteOrder {
   id: string; pemesanId: string; pemberiId: string; status: OrderStatus;
   totalAmount: string; createdAt: string; updatedAt: string; items: RemoteOrderItem[];
   requesterUsername?: string;
+  paymentMethod: 'tunai' | 'qris';
 }
 
 async function orderRequest<T>(session: Session, path: string, init?: RequestInit): Promise<T> {
@@ -31,13 +32,16 @@ export const getIncomingOrders = (session: Session) => orderRequest<RemoteOrder[
 export const updateOrderStatus = (session: Session, orderId: string, status: OrderStatus) =>
   orderRequest<RemoteOrder>(session, `/${orderId}/status`, { method: 'PATCH', body: JSON.stringify({ status }) });
 
-export async function createProcurementOrder(session: Session, items: ProcurementLine[]) {
+export async function createProcurementOrder(session: Session, items: ProcurementLine[], paymentMethod: 'tunai' | 'qris') {
   const network = await NetInfo.fetch();
   if (!network.isConnected || network.isInternetReachable === false) {
     throw new Error('Untuk memesan ke pusat dibutuhkan akses internet.');
   }
   return orderRequest<RemoteOrder>(session, '', {
     method: 'POST',
-    body: JSON.stringify({ supplierId: session.centralSupplierId ?? undefined, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity, unit: item.unit })) }),
+    body: JSON.stringify({ supplierId: session.centralSupplierId ?? undefined, paymentMethod, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity, unit: item.unit })) }),
   });
 }
+
+export const updatePendingProcurementOrder = (session: Session, orderId: string, items: ProcurementLine[], paymentMethod: 'tunai' | 'qris') =>
+  orderRequest<RemoteOrder>(session, `/${orderId}`, { method: 'PATCH', body: JSON.stringify({ paymentMethod, items: items.map((item) => ({ warehouseId: String(item.warehouseId), quantity: item.quantity, unit: item.unit })) }) });

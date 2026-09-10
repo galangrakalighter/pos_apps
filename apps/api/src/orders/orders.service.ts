@@ -54,10 +54,10 @@ export class OrdersService {
       }));
       const totalAmount = products.reduce((sum, product) => sum + Number(product.harga) * normalized.get(product.id)!, 0).toFixed(2);
       const inserted: Array<{ id: string }> = await manager.query(
-        `INSERT INTO orders (pemesan_id, pemberi_id, status, total_amount)
-         VALUES ($1::uuid, $2::uuid, $3::order_status, $4::numeric)
+        `INSERT INTO orders (pemesan_id, pemberi_id, status, total_amount, payment_method)
+         VALUES ($1::uuid, $2::uuid, $3::order_status, $4::numeric, $5)
          RETURNING id::text`,
-        [requesterId, supplierId, OrderStatus.PENDING, totalAmount],
+        [requesterId, supplierId, OrderStatus.PENDING, totalAmount, dto.paymentMethod],
       );
       const orderId = inserted[0].id;
 
@@ -77,6 +77,49 @@ export class OrdersService {
     // Emit only after commit so consumers never receive a rolled-back order.
     this.gateway.notifyNewOrder(supplierId, saved);
     return saved;
+  }
+
+  async updatePending(requesterId: string, orderId: string, dto: CreateOrderDto): Promise<Order> {
+    if (!dto.items.length) throw new BadRequestException('Pesanan harus memiliki item');
+    const requestedItems = new Map<string, { quantity: number; unit: string }>();
+    for (const item of dto.items) {
+      if (requestedItems.has(item.warehouseId)) throw new BadRequestException('Bahan baku tidak boleh duplikat');
+      requestedItems.set(item.warehouseId, { quantity: item.quantity, unit: item.unit });
+    }
+    const ids = [...requestedItems.keys()].sort((a, b) => BigInt(a) < BigInt(b) ? -1 : 1);
+    return this.dataSource.transaction('SERIALIZABLE', async (manager) => {
+      const locked: Array<{ status: OrderStatus; pemesan_id: string }> = await manager.query(
+        `SELECT status, pemesan_id::text FROM orders WHERE id = $1::bigint FOR UPDATE`, [orderId],
+      );
+      if (!locked[0] || locked[0].pemesan_id !== requesterId) throw new NotFoundException('Pesanan tidak ditemukan');
+      if (locked[0].status !== OrderStatus.PENDING) throw new ConflictException('Pesanan hanya dapat diedit selama masih pending');
+      const products: Array<{ id: string; name: string; price: string; unit: string; available: boolean }> = await manager.query(
+        `SELECT id::text, nama_bumbu AS name, harga::text AS price, satuan AS unit, is_available AS available
+           FROM warehouse WHERE id = ANY($1::bigint[]) AND jenis_produk = 'bahan_baku' AND deleted_at IS NULL ORDER BY id`, [ids],
+      );
+      if (products.length !== ids.length) throw new BadRequestException('Bahan baku tidak ditemukan');
+      const unavailable = products.find((item) => !item.available);
+      if (unavailable) throw new ConflictException(`${unavailable.name} sedang tidak tersedia`);
+      const normalized = new Map(products.map((product) => {
+        const requested = requestedItems.get(product.id)!;
+        const quantity = this.convertUnit(requested.quantity, requested.unit, product.unit);
+        if (quantity === null) throw new BadRequestException(`Satuan tidak sesuai untuk ${product.name}`);
+        return [product.id, quantity];
+      }));
+      const total = products.reduce((sum, product) => sum + Number(product.price) * normalized.get(product.id)!, 0).toFixed(2);
+      await manager.query(`DELETE FROM order_items WHERE order_id = $1::bigint`, [orderId]);
+      for (const product of products) {
+        const requested = requestedItems.get(product.id)!;
+        const lineTotal = (Number(product.price) * normalized.get(product.id)!).toFixed(2);
+        await manager.query(
+          `INSERT INTO order_items (order_id, warehouse_id, nama_barang, jumlah_pesan, satuan, unit_price, line_total)
+           VALUES ($1::bigint, $2::bigint, $3, $4, $5, $6::numeric, $7::numeric)`,
+          [orderId, product.id, product.name, requested.quantity, requested.unit, product.price, lineTotal],
+        );
+      }
+      await manager.query(`UPDATE orders SET total_amount = $1::numeric, payment_method = $2, updated_at = now() WHERE id = $3::bigint`, [total, dto.paymentMethod, orderId]);
+      return manager.findOneOrFail(Order, { where: { id: orderId }, relations: { items: true } });
+    });
   }
 
   async incoming(adminId: string): Promise<Array<Order & { requesterUsername: string }>> {

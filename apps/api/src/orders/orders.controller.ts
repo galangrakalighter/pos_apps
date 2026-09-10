@@ -34,4 +34,13 @@ export class OrdersController {
   ) {
     return this.service.updateStatus(user.id, String(id), dto);
   }
+
+  @Patch(':id')
+  updatePending(
+    @CurrentUser() user: AuthenticatedUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: CreateOrderDto,
+  ) {
+    return this.service.updatePending(user.id, String(id), dto);
+  }
 }
