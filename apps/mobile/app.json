@@ -41,7 +41,8 @@
           "legacyVisible": "sticky-immersive"
         }
       ],
-      "expo-font"
+      "expo-font",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "expo-navigation-bar": {

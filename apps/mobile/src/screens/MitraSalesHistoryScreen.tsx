@@ -11,6 +11,10 @@ import {
   TextInput,
   View,
 } from "react-native";
+import DateTimePicker, {
+  DateTimePickerEvent,
+} from "@react-native-community/datetimepicker";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import {
   editPendingTransaction,
   getLocalSalesHistory,
@@ -52,6 +56,9 @@ export function MitraSalesHistoryScreen({ session }: { session: Session }) {
   const [loading, setLoading] = useState(true);
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [activeDatePicker, setActiveDatePicker] = useState<
+    "from" | "to" | null
+  >(null);
   const [syncFilter, setSyncFilter] = useState<SyncFilter>("all");
   const [paymentFilter, setPaymentFilter] = useState<PaymentFilter>("all");
   const [editing, setEditing] = useState<SaleTransaction | null>(null);
@@ -104,6 +111,22 @@ export function MitraSalesHistoryScreen({ session }: { session: Session }) {
     transactions: transactions.length,
   };
 
+  const openDatePicker = (type: "from" | "to") =>
+    setActiveDatePicker(type);
+  const changeDate = (event: DateTimePickerEvent, selected?: Date) => {
+    const type = activeDatePicker;
+    setActiveDatePicker(null);
+    if (event.type !== "set" || !selected || !type) return;
+    const value = localDateKey(selected.toISOString());
+    if (type === "from") {
+      setDateFrom(value);
+      if (dateTo && value > dateTo) setDateTo(value);
+    } else {
+      setDateTo(value);
+      if (dateFrom && value < dateFrom) setDateFrom(value);
+    }
+  };
+
   return (
     <View style={styles.screen}>
       <FlatList
@@ -130,25 +153,43 @@ export function MitraSalesHistoryScreen({ session }: { session: Session }) {
               <View style={styles.dateRange}>
                 <View style={styles.dateField}>
                   <Text style={styles.dateCaption}>Dari</Text>
-                  <TextInput
-                    value={dateFrom}
-                    onChangeText={setDateFrom}
-                    placeholder="YYYY-MM-DD"
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={10}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Pilih tanggal mulai"
+                    onPress={() => openDatePicker("from")}
                     style={styles.dateInput}
-                  />
+                  >
+                    <Text
+                      style={dateFrom ? styles.dateValue : styles.datePlaceholder}
+                    >
+                      {dateFrom ? displayDate(dateFrom) : "Pilih tanggal"}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="calendar-month-outline"
+                      size={18}
+                      color={colors.primary}
+                    />
+                  </Pressable>
                 </View>
                 <View style={styles.dateField}>
                   <Text style={styles.dateCaption}>Hingga</Text>
-                  <TextInput
-                    value={dateTo}
-                    onChangeText={setDateTo}
-                    placeholder="YYYY-MM-DD"
-                    keyboardType="numbers-and-punctuation"
-                    maxLength={10}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Pilih tanggal akhir"
+                    onPress={() => openDatePicker("to")}
                     style={styles.dateInput}
-                  />
+                  >
+                    <Text
+                      style={dateTo ? styles.dateValue : styles.datePlaceholder}
+                    >
+                      {dateTo ? displayDate(dateTo) : "Pilih tanggal"}
+                    </Text>
+                    <MaterialCommunityIcons
+                      name="calendar-month-outline"
+                      size={18}
+                      color={colors.primary}
+                    />
+                  </Pressable>
                 </View>
                 {(dateFrom || dateTo) && (
                   <Pressable
@@ -162,6 +203,22 @@ export function MitraSalesHistoryScreen({ session }: { session: Session }) {
                   </Pressable>
                 )}
               </View>
+              {activeDatePicker && (
+                <DateTimePicker
+                  value={parseDateKey(
+                    activeDatePicker === "from" ? dateFrom : dateTo,
+                  )}
+                  mode="date"
+                  display="default"
+                  maximumDate={new Date()}
+                  minimumDate={
+                    activeDatePicker === "to" && dateFrom
+                      ? parseDateKey(dateFrom)
+                      : undefined
+                  }
+                  onChange={changeDate}
+                />
+              )}
               <FilterRow
                 label="Sinkronisasi"
                 value={syncFilter}
@@ -711,6 +768,20 @@ function localDateKey(value: string): string {
   return `${year}-${month}-${day}`;
 }
 
+function parseDateKey(value: string): Date {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date();
+  const [year, month, day] = value.split("-").map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+
+function displayDate(value: string): string {
+  return parseDateKey(value).toLocaleDateString("id-ID", {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+  });
+}
+
 const paymentLabel = (method: PaymentMethod) =>
   ({
     tunai: "Tunai",
@@ -767,15 +838,20 @@ const styles = StyleSheet.create({
   dateField: { flexGrow: 1, flexBasis: 125 },
   dateCaption: { color: colors.muted, fontSize: 10, marginBottom: 4 },
   dateInput: {
-    color: colors.ink,
     backgroundColor: colors.canvas,
     borderWidth: 1,
     borderColor: colors.line,
     borderRadius: 10,
     paddingHorizontal: 11,
     paddingVertical: 9,
-    fontSize: 12,
+    minHeight: 40,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
   },
+  dateValue: { color: colors.ink, fontSize: 12, fontWeight: "700" },
+  datePlaceholder: { color: colors.muted, fontSize: 12 },
   clearDates: {
     borderRadius: 10,
     backgroundColor: colors.primarySoft,
